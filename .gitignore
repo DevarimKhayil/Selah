@@ -1,0 +1,38 @@
+# Personal study material (BSF lessons are licensed for personal class use only)
+StudyData/romans-lessons.json
+StudyData/torah-portions.json
+StudyData/torah-special-readings.json
+mobile/assets/www/data/romans.js
+mobile/assets/www/data/torah.js
+
+# Signing keys and secrets
+*.jks
+*.keystore
+*.pem
+
+# Generated phone data (run tools/build_android_data.py)
+mobile/assets/www/bible/
+mobile/assets/www/data/pool.js
+mobile/build/
+
+# Built apps and local folders
+Android/
+Backups/
+Past Themes/
+_to_delete/
+_selah-next/
+*.apk
+*.lnk
+
+# Logs, test output and screenshots
+*.log
+check-log.txt
+preview-*.png
+selah-*snapshot.png
+.selah-test-*/
+.snap-*/
+
+# Windows / editors
+Thumbs.db
+desktop.ini
+.vscode/

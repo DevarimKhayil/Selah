@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Selah</title>
+<link rel="stylesheet" href="app.css">
+<script>
+  window.Selah = { data: {}, bible: {}, waiting: {} };
+  Selah.bookLoaded = function (tr, book, chapters) {
+    Selah.bible[tr + '|' + book] = chapters;
+    (Selah.waiting[tr + '|' + book] || []).forEach(function (f) { f(chapters); });
+    delete Selah.waiting[tr + '|' + book];
+  };
+  try { if (JSON.parse(localStorage.getItem('selah.state') || '{}').theme === 'Dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+</script>
+</head>
+<body>
+<header id="appbar">
+  <div class="logo" id="logoBtn"></div>
+  <div class="titles"><div id="pageTitle">Today</div><div id="pageSub"></div></div>
+  <button class="icon-btn" id="searchBtn" aria-label="Open a passage"></button>
+  <button class="icon-btn" id="themeBtn" aria-label="Light or dark"></button>
+</header>
+
+<main id="content">
+  <section class="page" id="page-today"></section>
+  <section class="page" id="page-bible"></section>
+  <section class="page" id="page-verses"></section>
+  <section class="page" id="page-romans"></section>
+  <section class="page" id="page-more"></section>
+  <section class="page" id="page-highlights"></section>
+  <section class="page" id="page-journal"></section>
+  <section class="page" id="page-torah"></section>
+  <section class="page" id="page-settings"></section>
+</main>
+
+<button class="fab" id="fab" aria-label="Add a verse"></button>
+
+<nav id="tabbar">
+  <button data-tab="today"><span class="pill" data-icon="home"></span>Today</button>
+  <button data-tab="bible"><span class="pill" data-icon="book"></span>Bible</button>
+  <button data-tab="verses"><span class="pill" data-icon="library"></span>My verses</button>
+  <button data-tab="romans"><span class="pill" data-icon="school"></span>Romans</button>
+  <button data-tab="more"><span class="pill" data-icon="more"></span>More</button>
+</nav>
+
+<div id="scrim"></div>
+<div id="sheets"></div>
+<div id="toast"></div>
+
+<script src="data/pool.js"></script>
+<script src="data/romans.js" onerror="Selah.data.romansMissing = true"></script>
+<script src="data/torah.js" onerror="Selah.data.torahMissing = true"></script>
+<script src="app.js"></script>
+</body>
+</html>

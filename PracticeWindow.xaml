@@ -1,0 +1,49 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Time to remember — Selah" Width="660" Height="590" MinWidth="570" MinHeight="510"
+        WindowStartupLocation="CenterScreen" Style="{StaticResource DialogWindow}" Topmost="True">
+  <Grid Margin="30">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="16"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="14"/><RowDefinition Height="*"/><RowDefinition Height="12"/>
+      <RowDefinition Height="Auto"/><RowDefinition Height="8"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="16"/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <StackPanel Orientation="Horizontal">
+      <Border Style="{StaticResource IconTile}" Background="{DynamicResource HeroBrush}" VerticalAlignment="Top"><TextBlock Text="&#xE70F;" Style="{StaticResource Icon}" FontSize="17" Foreground="White" HorizontalAlignment="Center"/></Border>
+      <StackPanel Margin="14,0,0,0">
+        <TextBlock Text="MOMENT TO REMEMBER" Style="{StaticResource AccentCaption}"/>
+        <TextBlock Text="Type it from memory." FontFamily="{StaticResource DisplayFont}" FontSize="26" FontWeight="SemiBold" Margin="0,2,0,0"/>
+        <TextBlock Text="Capital letters and punctuation do not matter. The words do." Foreground="{DynamicResource TextSecondary}" FontSize="13" Margin="0,4,0,0"/>
+      </StackPanel>
+    </StackPanel>
+    <Border Grid.Row="2" Background="{DynamicResource AccentSoft}" CornerRadius="10" Padding="14,10">
+      <DockPanel>
+        <TextBlock Text="YOUR VERSE" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+        <TextBlock x:Name="PracticeReference" Foreground="{DynamicResource Accent}" FontSize="15" FontWeight="SemiBold" DockPanel.Dock="Right" HorizontalAlignment="Right"/>
+      </DockPanel>
+    </Border>
+    <Border Grid.Row="4" Style="{StaticResource FieldStyle}" Padding="15,12">
+      <TextBox x:Name="AnswerInput" Style="{StaticResource PlainTextBox}" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontSize="18"/>
+    </Border>
+    <StackPanel Grid.Row="6">
+      <TextBlock Text="LIVE WORD CHECK  ·  GREEN MATCHES  ·  CORAL NEEDS WORK" Style="{StaticResource Caption}" FontSize="11" Margin="0,0,0,8"/>
+      <Border Background="{DynamicResource CardAlt}" CornerRadius="9" Padding="8" MinHeight="48">
+        <ScrollViewer MaxHeight="75" VerticalScrollBarVisibility="Auto">
+          <WrapPanel x:Name="WordFeedbackPanel"/>
+        </ScrollViewer>
+      </Border>
+    </StackPanel>
+    <StackPanel Grid.Row="8">
+      <TextBlock x:Name="HintLabel" TextWrapping="Wrap" Foreground="{DynamicResource Accent}" FontSize="13"/>
+      <TextBlock x:Name="FeedbackLabel" TextWrapping="Wrap" Foreground="{DynamicResource Warning}" FontSize="13" Margin="0,3,0,0"/>
+    </StackPanel>
+    <StackPanel Grid.Row="10" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button x:Name="HintButton" Style="{StaticResource GhostButton}" Margin="0,0,8,0">
+        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xEA80;" Style="{StaticResource Icon}" FontSize="13"/><TextBlock Text="Hint" Margin="7,0,0,0"/></StackPanel>
+      </Button>
+      <Button x:Name="LaterButton" Content="Later" Style="{StaticResource GhostButton}" Margin="0,0,8,0"/>
+      <Button x:Name="CheckButton" Content="Check answer" Style="{StaticResource PrimaryButton}" IsDefault="False"/>
+    </StackPanel>
+  </Grid>
+</Window>

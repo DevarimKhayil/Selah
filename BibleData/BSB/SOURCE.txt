@@ -1,0 +1,7 @@
+Berean Standard Bible (BSB)
+The Holy Bible, Berean Standard Bible, BSB is produced in cooperation with Bible Hub,
+Discovery Bible, OpenBible.info, and the Berean Bible Translation Committee.
+This text of God's Word has been dedicated to the public domain (CC0).
+https://berean.bible/
+Converted for Selah from scrollmapper/bible_databases (formats/json/BSB.json), one file per book,
+in the same layout as the KJV files in the parent folder.

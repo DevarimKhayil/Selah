@@ -1,0 +1,39 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Add a verse — Selah" Width="540" Height="500" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" Style="{StaticResource DialogWindow}">
+  <Grid Margin="30">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="20"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="7"/><RowDefinition Height="Auto"/><RowDefinition Height="18"/>
+      <RowDefinition Height="*"/><RowDefinition Height="20"/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <StackPanel Orientation="Horizontal">
+      <Border Style="{StaticResource IconTile}" Background="#107C41" VerticalAlignment="Top"><TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="17" Foreground="White" HorizontalAlignment="Center"/></Border>
+      <StackPanel Margin="14,0,0,0">
+        <TextBlock Text="NEW MEMORY" Style="{StaticResource AccentCaption}"/>
+        <TextBlock Text="Add a verse" FontFamily="{StaticResource DisplayFont}" FontSize="26" FontWeight="SemiBold" Margin="0,2,0,0"/>
+        <TextBlock Text="Type a reference and press Fill in, or paste the exact wording you want." Foreground="{DynamicResource TextSecondary}" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0"/>
+      </StackPanel>
+    </StackPanel>
+    <TextBlock Grid.Row="2" Text="REFERENCE" Style="{StaticResource Caption}"/>
+    <Grid Grid.Row="4">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Border Style="{StaticResource FieldStyle}">
+        <TextBox x:Name="ReferenceInput" Style="{StaticResource PlainTextBox}" FontSize="16" MaxLength="120"/>
+      </Border>
+      <Button x:Name="FillVerseButton" Grid.Column="1" Content="Fill in" Style="{StaticResource GhostButton}" Margin="8,0,0,0" ToolTip="Look up this reference in your chosen translation"/>
+    </Grid>
+    <StackPanel Grid.Row="6">
+      <TextBlock Text="VERSE TEXT" Style="{StaticResource Caption}" Margin="0,0,0,7"/>
+      <Border Style="{StaticResource FieldStyle}" Padding="12,10" Height="140">
+        <TextBox x:Name="VerseInput" Style="{StaticResource PlainTextBox}" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontSize="15" MaxLength="4000"/>
+      </Border>
+      <TextBlock x:Name="ValidationLabel" Foreground="{DynamicResource Warning}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
+    </StackPanel>
+    <StackPanel Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button x:Name="CancelButton" Content="Cancel" Style="{StaticResource GhostButton}" Margin="0,0,8,0"/>
+      <Button x:Name="SaveButton" Content="Add verse" Style="{StaticResource PrimaryButton}"/>
+    </StackPanel>
+  </Grid>
+</Window>

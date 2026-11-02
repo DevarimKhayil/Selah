@@ -1,0 +1,38 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Today's verse — Selah" Width="600" Height="440" MinWidth="520" MinHeight="390"
+        WindowStartupLocation="CenterScreen" Style="{StaticResource DialogWindow}" Topmost="True">
+  <Grid Margin="30">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="16"/><RowDefinition Height="*"/><RowDefinition Height="18"/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <StackPanel Orientation="Horizontal">
+      <Border Style="{StaticResource IconTile}" Background="{DynamicResource HeroBrush}" VerticalAlignment="Top"><TextBlock Text="&#xE734;" Style="{StaticResource Icon}" FontSize="17" Foreground="White" HorizontalAlignment="Center"/></Border>
+      <StackPanel Margin="14,0,0,0">
+        <TextBlock Text="A MOMENT WITH SCRIPTURE" Style="{StaticResource AccentCaption}"/>
+        <TextBlock Text="Today's verse is here." FontFamily="{StaticResource DisplayFont}" FontSize="26" FontWeight="SemiBold" Margin="0,2,0,0"/>
+        <TextBlock x:Name="DailyInviteProgress" Foreground="{DynamicResource TextSecondary}" FontSize="13" Margin="0,4,0,0"/>
+      </StackPanel>
+    </StackPanel>
+    <Border Grid.Row="2" CornerRadius="16" Padding="24" Background="{DynamicResource HeroBrush}">
+      <Grid>
+        <StackPanel x:Name="DailyInviteIntro" VerticalAlignment="Center">
+          <TextBlock Text="No verse is selected right now." FontSize="20" FontWeight="SemiBold" Foreground="White"/>
+          <TextBlock Text="Would you like to read the verse of the day, then try it from memory?" Foreground="#E3EEFC" FontSize="15" TextWrapping="Wrap" LineHeight="23" Margin="0,12,0,0"/>
+        </StackPanel>
+        <StackPanel x:Name="DailyInviteReading" Visibility="Collapsed">
+          <TextBlock Text="READ IT SLOWLY" Foreground="#E3EEFC" FontSize="12" FontWeight="Bold"/>
+          <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="170" Margin="0,12,0,0">
+            <TextBlock x:Name="DailyInviteText" FontFamily="{StaticResource DisplayFont}" FontSize="20" FontWeight="SemiBold" Foreground="White" TextWrapping="Wrap" LineHeight="30"/>
+          </ScrollViewer>
+          <TextBlock x:Name="DailyInviteReference" Foreground="#E3EEFC" FontSize="14" FontWeight="SemiBold" Margin="0,14,0,0"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button x:Name="DailyInviteLaterButton" Content="Not now" Style="{StaticResource GhostButton}" Margin="0,0,8,0"/>
+      <Button x:Name="DailyInviteReadButton" Content="Read today's verse" Style="{StaticResource PrimaryButton}"/>
+      <Button x:Name="DailyInviteReadyButton" Content="I'm ready to type" Style="{StaticResource PrimaryButton}" Visibility="Collapsed"/>
+    </StackPanel>
+  </Grid>
+</Window>
