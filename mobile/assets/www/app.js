@@ -349,25 +349,31 @@ function addVerse(reference, text, makeFocus, source) {
   if (makeFocus) setFocus(v.id); else { save(); refresh(); }
   return v;
 }
-function normalize(t) { return (t || '').toLowerCase().replace(/[\p{P}\p{S}]/gu, '').replace(/\s+/g, ' ').trim(); }
+// Dashes (-, –, —) separate words, so "come—the" can be typed as "come the".
+function normalize(t) { return (t || '').toLowerCase().replace(/\p{Pd}+/gu, ' ').replace(/[\p{P}\p{S}]/gu, '').replace(/\s+/g, ' ').trim(); }
+function splitWords(t) { return (t || '').replace(/\p{Pd}+/gu, ' ').trim().split(/\s+/).filter(Boolean); }
+function verseMatches(answer, verse) {
+  var a = normalize(answer), b = normalize(verse);
+  return a === b || a.replace(/ /g, '') === b.replace(/ /g, '');
+}
 function liveWords(answer, verse) {
-  var expected = verse.trim().split(/\s+/).filter(function (w) { return normalize(w); });
-  var typed = answer.trim().split(/\s+/).filter(Boolean);
+  var expected = splitWords(verse).filter(function (w) { return normalize(w); });
+  var typed = splitWords(answer);
   if (!answer.trim()) return [];
   return typed.map(function (w, i) {
     var a = normalize(w), t = i < expected.length ? normalize(expected[i]) : '';
-    var status = a && a === t ? 'correct' : (i === typed.length - 1 && !/\s$/.test(answer) && a && t.indexOf(a) === 0 ? 'partial' : 'wrong');
+    var status = a && a === t ? 'correct' : (i === typed.length - 1 && !/[\s\p{Pd}]$/u.test(answer) && a && t.indexOf(a) === 0 ? 'partial' : 'wrong');
     return { word: w, status: status };
   });
 }
 function hintIndex(answer, verse) {
-  var expected = verse.trim().split(/\s+/).filter(function (w) { return normalize(w); });
-  var typed = answer.trim().split(/\s+/).filter(Boolean), i = 0;
+  var expected = splitWords(verse).filter(function (w) { return normalize(w); });
+  var typed = splitWords(answer), i = 0;
   while (i < typed.length && i < expected.length && normalize(typed[i]) === normalize(expected[i])) i++;
   return i;
 }
 function nextHint(answer, verse, level) {
-  var expected = verse.trim().split(/\s+/).filter(function (w) { return normalize(w); });
+  var expected = splitWords(verse).filter(function (w) { return normalize(w); });
   var i = hintIndex(answer, verse);
   if (i >= expected.length) return 'You have reached the end. Check your answer.';
   if (level >= 2) return 'Hint: word ' + (i + 1) + ' is "' + expected[i].replace(/^[^\w]+|[^\w]+$/g, '') + '".';
@@ -561,7 +567,7 @@ function showPractice(v, after) {
   rec.foot.appendChild(el('button', { class: 'btn ghost', text: 'Later', onclick: function () { closeSheet(); } }));
   rec.foot.appendChild(el('button', { class: 'btn primary', text: 'Check answer', onclick: function () {
     if (!ta.value.trim()) { fb.textContent = 'Type the verse before checking.'; return; }
-    if (normalize(ta.value) === normalize(v.text)) { closeSheet(); toast(recordPass(v)); }
+    if (verseMatches(ta.value, v.text)) { closeSheet(); toast(recordPass(v)); }
     else fb.textContent = 'Not quite. Review the coral words, then try again. Hint gives the next starting letter.';
   } }));
   setTimeout(function () { ta.focus(); }, 300);
@@ -1331,6 +1337,6 @@ function init() {
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { var now = isoDate(new Date()); if (now !== day) { day = now; ensureDaily(); refresh(); } } });
 }
 // Exposed for testing
-S.debug = { planAhead: planAhead, findRefs: findRefs, parsePassages: parsePassages, lessonForDate: lessonForDate, weekStart: weekStart, hebrewDate: hebrewDate, getDaily: getDaily, st: function () { return st; }, go: go, showScripture: showScripture, showPractice: showPractice, getFocus: getFocus, addVerse: addVerse, questionParts: questionParts, mergeState: mergeState, exportHtml: exportHtml };
+S.debug = { verseMatches: verseMatches, liveWords: liveWords, planAhead: planAhead, findRefs: findRefs, parsePassages: parsePassages, lessonForDate: lessonForDate, weekStart: weekStart, hebrewDate: hebrewDate, getDaily: getDaily, st: function () { return st; }, go: go, showScripture: showScripture, showPractice: showPractice, getFocus: getFocus, addVerse: addVerse, questionParts: questionParts, mergeState: mergeState, exportHtml: exportHtml };
 init();
 })();

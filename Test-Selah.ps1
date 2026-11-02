@@ -85,6 +85,8 @@ try {
         $exportHtml -notmatch '9b\.' -or $exportHtml -notmatch 'Earlier combined answer' -or
         $exportHtml -notmatch 'Answer for part a' -or $exportHtml -notmatch 'Answer for part b') { throw 'Romans printable export failed.' }
     if ((Normalize-Verse '  Be still, LORD! ') -ne (Normalize-Verse 'be still lord')) { throw 'Answer comparison failed.' }
+    if (-not (Test-VerseMatch 'is to come the Almighty' 'is to come—the Almighty') -or -not (Test-VerseMatch 'is to come-the Almighty' 'is to come—the Almighty') -or
+        (Test-VerseMatch 'is to come Almighty' 'is to come—the Almighty')) { throw 'Dashed words should be typed as separate words.' }
     $practiceUi = Load-Xaml (Join-Path $PSScriptRoot 'PracticeWindow.xaml')
     if ($null -eq $practiceUi.FindName('AnswerInput').CaretBrush) { throw 'Practice caret brush is missing.' }
     if ($null -eq $practiceUi.FindName('HintButton')) { throw 'Hint control is missing.' }

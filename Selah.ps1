@@ -342,20 +342,33 @@ function Add-Verse([string]$reference, [string]$text, [bool]$makeFocus = $true, 
 }
 
 function Normalize-Verse([string]$text) {
-    $clean = [regex]::Replace($text.ToLowerInvariant(), '[\p{P}\p{S}]', '')
+    # Dashes (-, –, —) separate words, so "come—the" can be typed as "come the".
+    $clean = [regex]::Replace($text.ToLowerInvariant(), '\p{Pd}+', ' ')
+    $clean = [regex]::Replace($clean, '[\p{P}\p{S}]', '')
     return ([regex]::Replace($clean, '\s+', ' ')).Trim()
 }
 
+function Test-VerseMatch([string]$answerText, [string]$verseText) {
+    # Words must match; "come the", "come-the" and "comethe" are all accepted for "come—the".
+    $a = Normalize-Verse $answerText
+    $b = Normalize-Verse $verseText
+    return ($a -eq $b) -or ($a.Replace(' ', '') -eq $b.Replace(' ', ''))
+}
+
+function Split-VerseWords([string]$text) {
+    return @(([regex]::Replace($text, '\p{Pd}+', ' ')).Trim() -split '\s+' | Where-Object { $_ })
+}
+
 function Get-LiveWords([string]$answerText, [string]$verseText) {
-    $expected = @($verseText.Trim() -split '\s+' | Where-Object { (Normalize-Verse $_) })
-    $typed = @($answerText.Trim() -split '\s+' | Where-Object { $_ })
+    $expected = @(Split-VerseWords $verseText | Where-Object { (Normalize-Verse $_) })
+    $typed = @(Split-VerseWords $answerText)
     if (-not $answerText.Trim()) { return }
     for ($i = 0; $i -lt $typed.Count; $i++) {
         $word = [string]$typed[$i]
         $actual = Normalize-Verse $word
         $target = if ($i -lt $expected.Count) { Normalize-Verse ([string]$expected[$i]) } else { '' }
         $status = if ($actual -and $actual -eq $target) { 'correct' }
-                  elseif ($i -eq ($typed.Count - 1) -and $answerText -notmatch '\s$' -and
+                  elseif ($i -eq ($typed.Count - 1) -and $answerText -notmatch '[\s\p{Pd}]$' -and
                           $actual -and $target.StartsWith($actual, [StringComparison]::OrdinalIgnoreCase)) { 'partial' }
                   else { 'wrong' }
         [pscustomobject]@{ word = $word; status = $status }
@@ -363,8 +376,8 @@ function Get-LiveWords([string]$answerText, [string]$verseText) {
 }
 
 function Get-HintIndex([string]$answerText, [string]$verseText) {
-    $expected = @($verseText.Trim() -split '\s+' | Where-Object { (Normalize-Verse $_) })
-    $typed = @($answerText.Trim() -split '\s+' | Where-Object { $_ })
+    $expected = @(Split-VerseWords $verseText | Where-Object { (Normalize-Verse $_) })
+    $typed = @(Split-VerseWords $answerText)
     $index = 0
     while ($index -lt $typed.Count -and $index -lt $expected.Count -and
            (Normalize-Verse ([string]$typed[$index])) -eq (Normalize-Verse ([string]$expected[$index]))) { $index++ }
@@ -372,8 +385,8 @@ function Get-HintIndex([string]$answerText, [string]$verseText) {
 }
 
 function Get-NextHint([string]$answerText, [string]$verseText, [int]$level = 1) {
-    $expected = @($verseText.Trim() -split '\s+' | Where-Object { (Normalize-Verse $_) })
-    $typed = @($answerText.Trim() -split '\s+' | Where-Object { $_ })
+    $expected = @(Split-VerseWords $verseText | Where-Object { (Normalize-Verse $_) })
+    $typed = @(Split-VerseWords $answerText)
     $index = 0
     while ($index -lt $typed.Count -and $index -lt $expected.Count -and
            (Normalize-Verse ([string]$typed[$index])) -eq (Normalize-Verse ([string]$expected[$index]))) { $index++ }
@@ -554,7 +567,7 @@ function Show-Practice($verse, [bool]$scheduled = $false) {
         })
         $dialog.FindName('CheckButton').Add_Click({
             if (-not $answer.Text.Trim()) { $feedback.Text = 'Type the verse before checking.'; return }
-            if ((Normalize-Verse $answer.Text) -eq (Normalize-Verse $verse.text)) {
+            if ((Test-VerseMatch $answer.Text $verse.text)) {
                 $dialog.DialogResult = $true
             } else {
                 $feedback.Text = 'Not quite. Review the coral words, then try again. Hint gives the next starting letter.'
