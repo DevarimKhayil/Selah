@@ -2,6 +2,11 @@
 $testRoot = Join-Path $PSScriptRoot ('.selah-test-' + [guid]::NewGuid().ToString('N'))
 $env:SELAH_DATA_DIR = $testRoot
 
+foreach ($psFile in Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1') {
+    $head = [System.IO.File]::ReadAllBytes($psFile.FullName) | Select-Object -First 3
+    if (($head -join ',') -ne '239,187,191') { throw "$($psFile.Name) must be saved as UTF-8 with BOM, or Windows PowerShell misreads it." }
+}
+
 try {
     . (Join-Path $PSScriptRoot 'Selah.ps1') -TestMode
     if ($script:dailyVerses.Count -lt 400) { throw 'Daily verse list did not load.' }

@@ -1,0 +1,11 @@
+root = true
+
+[*]
+insert_final_newline = true
+
+# Windows PowerShell 5.1 reads BOM-less scripts as ANSI, which breaks "·", "✓" and similar characters.
+[*.ps1]
+charset = utf-8-bom
+
+[*.{xaml,json,md,js,css,html,py,java,xml,sh}]
+charset = utf-8

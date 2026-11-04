@@ -1,4 +1,4 @@
-# Verse highlighting (same 12 colours as Selah for Android), the Highlights page,
+﻿# Verse highlighting (same 12 colours as Selah for Android), the Highlights page,
 # and the book list that opens to show each book's chapter numbers.
 
 $script:highlights = [ordered]@{}

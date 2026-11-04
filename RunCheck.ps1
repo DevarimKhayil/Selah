@@ -1,4 +1,4 @@
-# One-off verification of the new Selah version: runs the self-test and saves preview snapshots.
+﻿# One-off verification of the new Selah version: runs the self-test and saves preview snapshots.
 $here = $PSScriptRoot
 $log = Join-Path $here 'check-log.txt'
 "Selah check $(Get-Date -Format o)" | Set-Content $log
