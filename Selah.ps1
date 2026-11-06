@@ -2,7 +2,7 @@
 
 trap {
     # Show any startup problem instead of closing silently (Selah runs without a console window).
-    $problem = ($_ | Out-String) + "`r`nAt: " + $_.InvocationInfo.PositionMessage
+    $problem = ($_.Exception.Message) + "`r`n`r`nWhere:`r`n" + $_.ScriptStackTrace + "`r`n`r`n" + ($_ | Out-String)
     try { [System.IO.File]::WriteAllText((Join-Path $PSScriptRoot 'startup-error.log'), $problem) } catch { }
     if (-not $TestMode) {
         try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show("Selah could not start.`n`n$problem", 'Selah', 'OK', 'Error') | Out-Null } catch { }
@@ -1305,6 +1305,20 @@ if ($TestMode) {
     $script:tray.Dispose()
     return
 }
+
+# A problem inside a button or timer is logged and shown, but Selah keeps running instead of closing.
+$script:app.Add_DispatcherUnhandledException({
+    param($sender, $e)
+    $err = $e.Exception
+    $inner = if ($err.InnerException) { $err.InnerException } else { $err }
+    $where = ''
+    if ($inner -is [System.Management.Automation.RuntimeException] -and $inner.ErrorRecord) { $where = $inner.ErrorRecord.ScriptStackTrace }
+    $report = "$(Get-Date -Format o)`r`n$($inner.Message)`r`n$where`r`n`r`n"
+    try { [System.IO.File]::AppendAllText((Join-Path $PSScriptRoot 'selah-errors.log'), $report) } catch { }
+    $e.Handled = $true
+    $script:practiceOpen = $false
+    try { [System.Windows.MessageBox]::Show("Something went wrong, but Selah is still running.`n`n$($inner.Message)`n`n$where`n`nDetails are saved in selah-errors.log.", 'Selah', 'OK', 'Warning') | Out-Null } catch { }
+})
 
 try { $script:app.Run($script:window) | Out-Null }
 finally {

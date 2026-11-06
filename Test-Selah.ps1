@@ -95,6 +95,9 @@ try {
     $practiceUi = Load-Xaml (Join-Path $PSScriptRoot 'PracticeWindow.xaml')
     if ($null -eq $practiceUi.FindName('AnswerInput').CaretBrush) { throw 'Practice caret brush is missing.' }
     if ($null -eq $practiceUi.FindName('HintButton')) { throw 'Hint control is missing.' }
+    foreach ($needed in @('PeekButton','PeekPanel','PeekText','PeekCaption','SourceLabel','SourceIcon','SourceBadge')) {
+        if ($null -eq $practiceUi.FindName($needed)) { throw "PracticeWindow.xaml is missing '$needed'." }
+    }
     $inviteUi = Load-Xaml (Join-Path $PSScriptRoot 'DailyInviteWindow.xaml')
     if ($null -eq $inviteUi.FindName('DailyInviteReadButton') -or $null -eq $inviteUi.FindName('DailyInviteReadyButton')) { throw 'Daily invitation controls are missing.' }
     if ((@(Get-ReminderTimes) -join ',') -ne '10:00,12:30,14:00,16:30') { throw 'Practice reminder times are incorrect.' }
@@ -102,7 +105,7 @@ try {
     Update-WordFeedback 'The wrong shep' 'The LORD is my shepherd;' ($practiceUi.FindName('WordFeedbackPanel'))
     if ($practiceUi.FindName('WordFeedbackPanel').Children.Count -ne 3) { throw 'Colored word preview failed.' }
     $addUi = Load-Xaml (Join-Path $PSScriptRoot 'AddVerseWindow.xaml')
-    if ($null -eq $addUi.FindName('FillVerseButton')) { throw 'Add verse Fill in button is missing.' }
+    if ($null -eq $addUi.FindName('FillVerseButton') -or $null -eq $addUi.FindName('DialogTitle') -or $null -eq $addUi.FindName('DialogCaption')) { throw 'Add verse dialog is out of date.' }
     Set-Theme 'Dark'
     $darkCaret = $script:ui.JournalEditor.CaretBrush.Color.ToString()
     Set-Theme 'Light'
