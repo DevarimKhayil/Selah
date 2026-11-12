@@ -6,7 +6,7 @@ try {
     $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File (Join-Path $here 'Test-Selah.ps1') 2>&1
     "TEST: $($out -join [Environment]::NewLine)" | Add-Content $log
 } catch { "TEST ERROR: $($_ | Out-String)" | Add-Content $log }
-foreach ($shot in @(@('Home','Light'),@('Home','Dark'),@('Bsf','Light'),@('BsfNotes','Dark'),@('Bible','Light'),@('Settings','Dark'),@('Torah','Light'),@('Library','Dark'))) {
+foreach ($shot in @(@('Home','Light'),@('Home','Dark'),@('Week','Light'),@('Week','Dark'),@('Bible','Light'),@('Settings','Dark'),@('Torah','Light'),@('Library','Dark'))) {
     $dir = Join-Path $here ('.snap-' + [guid]::NewGuid().ToString('N'))
     $env:SELAH_DATA_DIR = $dir
     $png = Join-Path $here ("preview-{0}-{1}.png" -f $shot[0], $shot[1])

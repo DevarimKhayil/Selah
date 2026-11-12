@@ -1,7 +1,7 @@
-"""Extract personal Selah study data from the two user-supplied PDFs.
+"""Extract the personal Torah reading card for Selah from the user's own PDF.
 
-Usage: python BuildStudyData.py TORAH_PDF ROMANS_PDF
-The PDFs remain with their owner; derived JSON is for their local BSF study.
+Usage: python BuildStudyData.py TORAH_PDF
+The PDF remains with its owner; the derived JSON is for local use only.
 """
 
 import json
@@ -11,7 +11,6 @@ from datetime import date
 from pathlib import Path
 
 import pdfplumber
-from pypdf import PdfReader
 
 
 ROOT = Path(__file__).parent
@@ -34,23 +33,6 @@ MONTHS = {
     "oct": 10, "nov": 11, "dec": 12, "jan": 1, "feb": 2, "mar": 3,
     "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9,
 }
-
-TITLES = [
-    "Humanity's Need for the Gospel", "God's Wrath Against Sinful Humanity",
-    "No Excuse for Anyone", "No One Righteous", "How God Saves Sinners",
-    "Justification by Faith, Part 1", "Justification by Faith, Part 2",
-    "Peace with God", "God's Gift of Righteousness", "Death to Sin",
-    "Alive to God", "The Law and the Believer", "Life Through the Spirit",
-    "Suffering and Glory", "Secure in God's Love",
-    "God's Sovereignty in Salvation", "Our Responsibility in Salvation",
-    "Our Privilege in Salvation", "Salvation for the Gentiles and for Israel",
-    "All Glory to God Forever", "Christian Worship and Service",
-    "Christian Love", "Christian Submission to Authority", "Christian Living",
-    "Christian Liberty", "Christian Unity", "Paul's Ministry and Plans",
-    "The Gospel's Impact in Rome and Corinth",
-    "Responding to the World's Most Influential Letter",
-    "Reflections on This Year's Study",
-]
 
 BOOKS = json.loads((ROOT / "BibleData" / "Books.json").read_text(encoding="utf-8"))
 book_names = sorted(set(BOOKS + ["Psalm"]), key=len, reverse=True)
@@ -179,114 +161,8 @@ def build_torah(path):
     return rows
 
 
-def load_pages(path):
-    reader = PdfReader(path)
-    return {i: page.extract_text(extraction_mode="layout") or ""
-            for i, page in enumerate(reader.pages, 1)}
-
-
-def tidy(line):
-    line = re.sub(r"(?<=\d)�(?=\d)", "–", line)
-    return re.sub(r"\s+", " ", line.strip()).replace("�", "’")
-
-
-def parse_questions(pages, start, number):
-    questions = []
-    day = ""
-    instruction = ""
-    current = None
-    active = False
-    for page_number in range(start, start + 3):
-        for raw in pages[page_number].splitlines():
-            line = tidy(raw)
-            if not line:
-                continue
-            day_match = re.match(r"^(First|Second|Third|Four\s*th|Fifth|Sixth) Day:\s*(.*)$", line, re.I)
-            if day_match:
-                if current:
-                    questions.append(current)
-                    current = None
-                day = re.sub(r"\s+", "", day_match.group(1)).title() + " Day"
-                instruction = day_match.group(2)
-                active = True
-                continue
-            if not active:
-                continue
-            if (re.match(r"^(?:\d+\s*\|\s*Lesson|Lesson\s+\d+\s*\|\s*\d+|Bible Study Fellowship\s*\|)", line)
-                    or line.startswith(("Homiletics", "Next step:", "© BSF"))):
-                continue
-            question_match = re.match(r"^(\d{1,2})\.\s+(.*)", line)
-            if question_match:
-                if current:
-                    questions.append(current)
-                current = {"number": int(question_match.group(1)), "day": day,
-                           "instruction": instruction, "lines": [question_match.group(2)]}
-                continue
-            if current:
-                current["lines"].append(line)
-    if current:
-        questions.append(current)
-    for q in questions:
-        q["text"] = "\n".join(q.pop("lines"))
-        q["references"] = references(q["instruction"] + " " + q["text"])
-    expected = list(range(1, len(questions) + 1))
-    got = [q["number"] for q in questions]
-    if got != expected or len(questions) < 10:
-        raise ValueError(f"Lesson {number} question numbering: {got}")
-    return questions
-
-
-def parse_note_page(text, lesson, page_number):
-    lines = []
-    last_blank = True
-    for raw in text.splitlines():
-        line = tidy(raw)
-        if re.match(rf"^(?:Lesson {lesson} Notes|\d+\s*\|\s*Lesson {lesson}|Bible Study Fellowship\s*\|\s*\d+)$", line):
-            continue
-        if not line:
-            if not last_blank and lines:
-                lines.append("")
-            last_blank = True
-        else:
-            lines.append(line)
-            last_blank = False
-    return {"pdfPage": page_number, "printedPage": page_number - 16,
-            "text": "\n".join(lines).strip()}
-
-
-def build_romans(path):
-    pages = load_pages(path)
-    question_starts = {}
-    note_starts = {}
-    for page_number, body in pages.items():
-        for m in re.finditer(r"(?m)^\s*Lesson\s+(\d+)\s+Questions\s*$", body):
-            question_starts[int(m.group(1))] = page_number
-        for m in re.finditer(r"(?m)^\s*Lesson\s+(\d+)\s+Notes\s*$", body):
-            note_starts[int(m.group(1))] = page_number
-    question_starts[30] = 383  # The last chapter is titled "Study Review Questions."
-    if set(question_starts) != set(range(1, 31)) or set(note_starts) != set(range(1, 30)):
-        raise ValueError("Romans lesson sections could not be located")
-    lessons = []
-    for number in range(1, 31):
-        start = question_starts[number]
-        questions = parse_questions(pages, start, number)
-        notes = ([parse_note_page(pages[p], number, p) for p in range(note_starts[number], note_starts[number] + 8)]
-                 if number < 30 else [])
-        note_heading = pages[note_starts[number]] if number < 30 else ""
-        scripture_match = re.search(r"(?m)^\s*(Romans\s+[\d:–-]+)\s*$", note_heading)
-        scripture = scripture_match.group(1).strip() if scripture_match else "Various"
-        lessons.append({"number": number, "title": TITLES[number - 1],
-                        "scripture": scripture, "questionsPdfPage": start,
-                        "questions": questions, "notesPdfPage": note_starts.get(number),
-                        "notesPages": notes})
-    (DATA / "romans-lessons.json").write_text(json.dumps(lessons, ensure_ascii=False, indent=2), encoding="utf-8")
-    return lessons
-
-
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        raise SystemExit("Usage: python BuildStudyData.py TORAH_PDF ROMANS_PDF")
+    if len(sys.argv) != 2:
+        raise SystemExit("Usage: python BuildStudyData.py TORAH_PDF")
     torah = build_torah(sys.argv[1])
-    romans = build_romans(sys.argv[2])
     print(f"Torah rows: {len(torah)}; current week: {torah[1]['name']} on {torah[1]['date']}")
-    print("Romans lessons:", len(romans), "question counts:", [len(x["questions"]) for x in romans])

@@ -1,12 +1,41 @@
-/* Selah for Android — Scripture, remembered.
-   A phone port of the Selah desktop app. Everything runs offline; state lives in localStorage. */
+/* =====================================================================================
+   app.js - the Selah phone app (an offline web app inside Android's WebView).
+
+   How it is organised (search for the "// ----" section banners):
+     helpers        tiny DOM and date helpers (el, icon, toast, isoDate, ...)
+     state          `st`, everything the user owns, saved as JSON in localStorage
+     Bible data     loading books, parsing references, NIV links, reference detection
+     daily verse    choosing and planning the verse of the day (also used by the widget)
+     verses & practice   memory verses, answer checking, hints, the practice sheet
+     sheets         bottom-sheet dialogs (open, drag down to close)
+     navigation     page switching (go/render) and the header
+     Today, Bible, My verses, More/Reflections/Torah/Settings, Week   the pages
+     theme          Chalk Light/Dark and the reading font/size
+     reminders      practice notifications through the Android bridge
+     start          init()
+
+   window.Selah (S) holds data loaded by <script> tags: S.data.pool, S.data.torah and the
+   Bible books. window.SelahAndroid (Android) is the Java bridge; it is null in a browser,
+   so every Android call is guarded and the app also runs on a desktop browser for testing.
+   ===================================================================================== */
 (function () {
 'use strict';
 var S = window.Selah;
 var Android = window.SelahAndroid || null;
 
+// Wraps a verse in curly quotes without doubling a quote mark the verse already has.
+function quoted(t) {
+  t = String(t || '').trim();
+  var open = /^[\u201C\u2018"']/.test(t) ? '' : '\u201C';
+  var close = /[\u201D\u2019"']$/.test(t) ? '' : '\u201D';
+  return open + t + close;
+}
 // ------------------------------------------------------------------ helpers
+// Shortcut for document.getElementById.
 function $(id) { return document.getElementById(id); }
+
+// Creates an element: el('div', { class, text, html, onclick, ...attrs }, [children]).
+// Attributes starting with 'on' become event listeners; strings in children become text.
 function el(tag, attrs, kids) {
   var n = document.createElement(tag);
   if (attrs) for (var k in attrs) {
@@ -52,41 +81,71 @@ var ICONS = {
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1 0 1.5-.8 1.5-1.5 0-1.2-1-1.5-1-2.5s.8-1.5 1.8-1.5H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>'
 };
+
+// Returns an inline SVG icon from the ICONS table above (stroke uses currentColor).
 function icon(name) {
   var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'i');
   s.innerHTML = ICONS[name] || '';
   return s;
 }
+
+// A small rounded square holding an icon (the c-* colour classes all use the theme tile colour).
 function iconTile(name, color) { return el('div', { class: 'tile-icon ' + color }, [icon(name)]); }
 var toastTimer = null;
+
+// Shows a short message at the bottom of the screen for a few seconds.
 function toast(msg) {
   var t = $('toast'); t.textContent = msg; t.classList.add('on');
   clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove('on'); }, 2600);
 }
+
+// Two-digit number: 7 -> '07'.
 function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+// Date -> 'yyyy-mm-dd' in local time (the key used for days, weeks and reflections).
 function isoDate(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
 var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 var DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+// Date -> 'Thursday, 12 November 2026'.
 function longDate(d) { return DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(); }
+
+// Date -> '12 Nov'.
 function shortDate(d) { return d.getDate() + ' ' + MONTHS[d.getMonth()].slice(0, 3); }
+
+// 'yyyy-mm-dd' -> local Date at midnight.
 function parseIso(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+
+// Random id for new verses.
 function uid() { return Date.now().toString(16) + Math.random().toString(16).slice(2, 10); }
+
+// Returns a function that waits until calls stop for `ms` milliseconds before running `fn`.
 function debounce(fn, ms) { var t; return function () { var a = arguments, me = this; clearTimeout(t); t = setTimeout(function () { fn.apply(me, a); }, ms); }; }
 
 // ------------------------------------------------------------------ state
 var POOL_VERSION = 2;
 var st = {
-  version: 1, verses: [], reflections: [], bibleNotes: [], delivered: [], dailyUsed: [], bsfAnswers: [],
+  version: 1, verses: [], reflections: [], bibleNotes: [], delivered: [], dailyUsed: [],
   focusId: '', focusSince: '', offerDailyWhenNoFocus: true, daily: null, dailyPoolVersion: POOL_VERSION,
-  theme: 'Light', translation: 'BSB', remindersOn: true, dailyPlan: {}, dailyNotifyOn: true, dailyNotifyTime: '06:30'
+  weeks: {}, habits: [], theme: 'Light', lastLight: 'Light', lastDark: 'Dark', readFont: 'Serif', readSize: 17, translation: 'BSB', remindersOn: true, dailyPlan: {}, dailyNotifyOn: true, dailyNotifyTime: '06:30'
 };
+
+// Loads saved state from localStorage into `st`, fills in missing lists, resets the daily pool
+// if its version changed, sets aside old Romans answers, and loads a Torah card imported earlier.
 function loadState() {
   try {
     var raw = JSON.parse(localStorage.getItem('selah.state') || 'null');
     if (raw) for (var k in raw) st[k] = raw[k];
   } catch (e) { toast('Saved data could not be read.'); }
-  ['verses','reflections','bibleNotes','delivered','dailyUsed','bsfAnswers'].forEach(function (k) { if (!Array.isArray(st[k])) st[k] = []; });
+  ['verses','reflections','bibleNotes','delivered','dailyUsed'].forEach(function (k) { if (!Array.isArray(st[k])) st[k] = []; });
+  // Romans (BSF) study was removed in 1.15. Old answers are set aside, not shown.
+  if (st.bsfAnswers) {
+    try { if (st.bsfAnswers.length && !localStorage.getItem('selah.bsfArchive')) localStorage.setItem('selah.bsfArchive', JSON.stringify(st.bsfAnswers)); } catch (e) {}
+    delete st.bsfAnswers;
+  }
+  if (!st.weeks || typeof st.weeks !== 'object' || Array.isArray(st.weeks)) st.weeks = {};
+  if (!Array.isArray(st.habits)) st.habits = [];
   if (st.dailyPoolVersion !== POOL_VERSION) { st.dailyUsed = []; st.daily = null; st.dailyPoolVersion = POOL_VERSION; }
   if (!st.dailyPlan || typeof st.dailyPlan !== 'object') st.dailyPlan = {};
   if (!st.highlights || typeof st.highlights !== 'object') st.highlights = {};
@@ -94,6 +153,8 @@ function loadState() {
   for (var hk in st.highlights) if (OLD_HL[st.highlights[hk].color]) st.highlights[hk].color = OLD_HL[st.highlights[hk].color];
   if (st.delivered.length > 400) st.delivered = st.delivered.slice(-200);
 }
+
+// Writes `st` to localStorage (everything the user owns lives in this one JSON value).
 function save() {
   try { localStorage.setItem('selah.state', JSON.stringify(st)); }
   catch (e) { toast('Could not save — storage is full.'); }
@@ -102,6 +163,8 @@ function save() {
 // ------------------------------------------------------------------ Bible data
 var BOOKS = S.data.books;
 var ALIASES = { 'psalm': 'Psalms', 'song of songs': 'Song of Solomon', 'revelations': 'Revelation' };
+
+// Turns a typed book name ('psalm', 'Song of Songs') into the canonical book name, or ''.
 function resolveBook(name) {
   if (!name) return null;
   var n = name.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -109,8 +172,15 @@ function resolveBook(name) {
   for (var i = 0; i < BOOKS.length; i++) if (BOOKS[i].toLowerCase() === n) return BOOKS[i];
   return null;
 }
+
+// Book name for display: 'Psalms' is shown as 'Psalm'.
 function displayBook(b) { return b === 'Psalms' ? 'Psalm' : b; }
+
+// Full name of a translation code (BSB / KJV).
 function trName(code) { return code === 'KJV' ? 'King James Version' : 'Berean Standard Bible'; }
+
+// Loads one Bible book (bible/<TR>/<Book>.js) on demand and resolves with its chapters.
+// Each book file calls Selah.bookLoaded(...) when it has loaded (see index.html).
 function loadBook(book, tr) {
   tr = tr === 'KJV' ? 'KJV' : 'BSB';
   var key = tr + '|' + book;
@@ -126,6 +196,7 @@ function loadBook(book, tr) {
 }
 
 // Parse "John 1:12; 3:14-18, 20" etc. into passages {title, book, verses:[{c,v,t}], error}
+// Parses a reference such as 'Joshua 3:5-7, 5:2-6:1' and resolves with its passages and verses.
 function parsePassages(reference, tr) {
   var clean = reference.replace(/\s*[–—-]\s*/g, '-');
   var segments = clean.split(/[;,]\s*/);
@@ -163,12 +234,18 @@ function parsePassages(reference, tr) {
     }, function () { return { title: sp.title, verses: [], error: 'Could not load passage: ' + sp.title }; });
   }));
 }
+
+// Resolves with the plain text of a reference (no verse numbers).
 function verseText(reference, tr) {
   return parsePassages(reference, tr || st.translation).then(function (ps) {
     return ps.map(function (p) { return p.verses.map(function (v) { return v.t; }).join(' '); }).join(' ').trim();
   });
 }
+
+// BibleGateway NIV link for a reference (NIV text is copyrighted, so it is not bundled).
 function nivUrl(ref) { return 'https://www.biblegateway.com/passage/?search=' + encodeURIComponent(ref.trim()) + '&version=NIV'; }
+
+// Opens a web link: in the Android app through the bridge, otherwise in a new tab.
 function openUrl(url) { if (Android && Android.openUrl) Android.openUrl(url); else window.open(url, '_blank'); }
 
 // Reference detection in free text (port of Find-ScriptureReferences)
@@ -184,6 +261,9 @@ var refRe, itemRe, ctxRe;
   itemRe = new RegExp('(\\s*[,;]\\s*)((?:\\d+:\\d+[a-c]?|\\d+)(?:' + dash + '\\d+(?::\\d+)?[a-c]?)?)', 'g');
   ctxRe = new RegExp('(^|[^\\w])((?:[Vv]erses?|vv?\\.)\\s+(\\d+)[a-c]?(?:' + dash + '(\\d+)[a-c]?)?)(?![\\d:])', 'g');
 })();
+
+// Finds Bible references inside free text, including follow-on ones ('John 1:12; 3:14')
+// and 'verse 27' using the surrounding book and chapter as context.
 function findRefs(text, ctxBook, ctxChap) {
   var explicit = [];
   if (!text) return { links: [], book: ctxBook || '', chapter: ctxChap || 0 };
@@ -227,29 +307,12 @@ function findRefs(text, ctxBook, ctxChap) {
   var last = explicit.length ? explicit[explicit.length - 1] : null;
   return { links: all, book: last ? last.book : (ctxBook || ''), chapter: last ? last.chapter : (ctxChap || 0) };
 }
-function refContext(reference) {
-  var f = findRefs(reference || '');
-  return f.links.length ? { book: f.links[0].book, chapter: f.links[0].chapter } : { book: '', chapter: 0 };
-}
-// Append text with clickable references into a parent node; returns the running context.
-function linkify(parent, text, ctxBook, ctxChap) {
-  var f = findRefs(text, ctxBook, ctxChap), pos = 0;
-  f.links.forEach(function (l) {
-    if (l.index < pos) return;
-    if (l.index > pos) parent.appendChild(document.createTextNode(text.slice(pos, l.index)));
-    var a = el('a', { href: '#', text: text.substr(l.index, l.length), onclick: function (e) { e.preventDefault(); showScripture(l.reference); } });
-    parent.appendChild(a);
-    pos = l.index + l.length;
-  });
-  if (pos < text.length) parent.appendChild(document.createTextNode(text.slice(pos)));
-  return f;
-}
-function refChip(reference) {
-  return el('button', { class: 'chip', onclick: function () { showScripture(reference); } }, [icon('book'), reference]);
-}
 
 // ------------------------------------------------------------------ Hebrew date
 var HEB_FIX = { 'Tishri': 'Tishrei', 'Heshvan': 'Cheshvan', 'Tamuz': 'Tammuz' };
+
+// Today's Hebrew date in English letters, e.g. '2 Kislev 5787', using the browser's
+// Hebrew calendar (Intl). Returns '' if the device does not support it.
 function hebrewDate(d) {
   try {
     var parts = new Intl.DateTimeFormat('en-u-ca-hebrew', { day: 'numeric', month: 'long', year: 'numeric' }).formatToParts(d);
@@ -262,6 +325,8 @@ function hebrewDate(d) {
 
 // ------------------------------------------------------------------ daily verse
 var dailyCache = {};
+
+// Makes sure today's verse of the day is set (from the 60-day plan when there is one).
 function ensureDaily() {
   var today = isoDate(new Date()), pool = S.data.pool;
   if (!(st.daily && st.daily.date === today) && st.dailyPlan[today] !== undefined && st.dailyPlan[today] < pool.length) {
@@ -277,6 +342,9 @@ function ensureDaily() {
 // Plan the next 60 days of verses so the phone can show them in notifications and the widget
 // even when Selah is closed. Future picks avoid verses already seen or already planned.
 var PLAN_DAYS = 60;
+
+// Plans the verse of the day for the next 60 days, so notifications and the home-screen
+// widget can show it even while Selah is closed. Avoids verses already seen or planned.
 function planAhead() {
   var pool = S.data.pool, today = new Date(), planned = {}, k;
   for (k in st.dailyPlan) if (k < isoDate(today)) delete st.dailyPlan[k];
@@ -294,6 +362,8 @@ function planAhead() {
   save();
 }
 var lastPlanKey = '';
+
+// Sends the planned daily verses and the notification time to the Android side.
 function pushDailyToPhone(force) {
   if (!Android || !Android.setDailyPlan) return;
   planAhead();
@@ -307,6 +377,8 @@ function pushDailyToPhone(force) {
       Android.setDailySchedule(!!st.dailyNotifyOn, st.dailyNotifyTime || '06:30');
     });
 }
+
+// Chooses a new random verse for today that has not been used yet ('Another').
 function pickDaily(current) {
   var pool = S.data.pool;
   if (st.dailyUsed.length >= pool.length) st.dailyUsed = [];
@@ -321,6 +393,8 @@ function pickDaily(current) {
   save();
   pushDailyToPhone(false);
 }
+
+// Resolves with { reference, text } for a daily-pool entry in the current translation (cached).
 function getDaily(index) {
   if (index === undefined) index = st.daily.index;
   var entry = S.data.pool[index], key = st.translation + '|' + index;
@@ -333,9 +407,16 @@ function getDaily(index) {
 }
 
 // ------------------------------------------------------------------ verses & practice
+// Finds a saved memory verse by id.
 function getVerse(id) { for (var i = 0; i < st.verses.length; i++) if (st.verses[i].id === id) return st.verses[i]; return null; }
+
+// The verse currently being memorized, unless it is already memorized.
 function getFocus() { var v = getVerse(st.focusId); return v && !v.memorizedAt ? v : null; }
+
+// Makes a verse the focus for practice reminders.
 function setFocus(id) { var v = getVerse(id); if (!v || v.memorizedAt) return; st.focusId = id; st.focusSince = new Date().toISOString(); save(); refresh(); }
+
+// Saves a memory verse (or reuses an identical one) and optionally makes it the focus.
 function addVerse(reference, text, makeFocus, source) {
   reference = (reference || '').trim(); text = (text || '').trim();
   if (!reference || !text) return null;
@@ -350,12 +431,19 @@ function addVerse(reference, text, makeFocus, source) {
   return v;
 }
 // Dashes (-, –, —) separate words, so "come—the" can be typed as "come the".
+// Simplifies text for comparing answers: lower case, letters and digits only, single spaces.
 function normalize(t) { return (t || '').toLowerCase().replace(/\p{Pd}+/gu, ' ').replace(/[\p{P}\p{S}]/gu, '').replace(/\s+/g, ' ').trim(); }
+
+// Splits text into words; dashes count as spaces.
 function splitWords(t) { return (t || '').replace(/\p{Pd}+/gu, ' ').trim().split(/\s+/).filter(Boolean); }
+
+// True when the typed answer has the same words as the verse.
 function verseMatches(answer, verse) {
   var a = normalize(answer), b = normalize(verse);
   return a === b || a.replace(/ /g, '') === b.replace(/ /g, '');
 }
+
+// Marks each typed word correct, partial (still being typed) or wrong for the live check.
 function liveWords(answer, verse) {
   var expected = splitWords(verse).filter(function (w) { return normalize(w); });
   var typed = splitWords(answer);
@@ -366,12 +454,16 @@ function liveWords(answer, verse) {
     return { word: w, status: status };
   });
 }
+
+// Index of the first word not typed correctly yet.
 function hintIndex(answer, verse) {
   var expected = splitWords(verse).filter(function (w) { return normalize(w); });
   var typed = splitWords(answer), i = 0;
   while (i < typed.length && i < expected.length && normalize(typed[i]) === normalize(expected[i])) i++;
   return i;
 }
+
+// Hint text for the next word (first letter, then the whole word on a second press).
 function nextHint(answer, verse, level) {
   var expected = splitWords(verse).filter(function (w) { return normalize(w); });
   var i = hintIndex(answer, verse);
@@ -379,7 +471,7 @@ function nextHint(answer, verse, level) {
   if (level >= 2) return 'Hint: word ' + (i + 1) + ' is "' + expected[i].replace(/^[^\w]+|[^\w]+$/g, '') + '".';
   return 'Hint: word ' + (i + 1) + ' begins with "' + normalize(expected[i]).charAt(0).toUpperCase() + '". Tap Hint again to see the whole word.';
 }
-// Is this verse saved in the BSB or KJV wording, or in the user's own words?
+// Resolves with whether a saved verse uses BSB, KJV or the user's own wording.
 function wordingSource(v) {
   var saved = normalize(v.text);
   return Promise.all(['BSB', 'KJV'].map(function (c) { return verseText(v.reference.replace(/^Psalms\b/, 'Psalm'), c).catch(function () { return ''; }); })).then(function (t) {
@@ -389,6 +481,8 @@ function wordingSource(v) {
     return { label: 'Your own wording', own: true };
   });
 }
+
+// Counts one correct recitation; three passes mark the verse memorized. Returns a message.
 function recordPass(v) {
   if (v.memorizedAt) { v.lastReviewedAt = new Date().toISOString(); save(); refresh(); return 'Passed! You still remember this verse.'; }
   v.passes = (v.passes || 0) + 1;
@@ -403,11 +497,15 @@ function recordPass(v) {
   save(); refresh();
   return mastered ? 'Beautifully done. This verse is now in your memorized collection.' : 'Passed! ' + v.passes + ' of 3 correct recitations completed.';
 }
+
+// Today's daily verse if it has been saved as a memory verse.
 function todaysPracticeVerse(d) {
   if (!d) return null;
   for (var i = 0; i < st.verses.length; i++) if (st.verses[i].reference === d.reference && st.verses[i].text === d.text) return st.verses[i];
   return null;
 }
+
+// True if today's daily verse was already practised successfully.
 function doneToday(v, now) {
   if (!v) return false;
   return [v.memorizedAt, v.lastReviewedAt].some(function (s) { return s && isoDate(new Date(s)) === isoDate(now); });
@@ -415,6 +513,9 @@ function doneToday(v, now) {
 
 // ------------------------------------------------------------------ sheets
 var sheetStack = [];
+
+// Opens a bottom sheet (the app's dialogs) with a title, optional icon, body and footer.
+// Returns { sheet, body, foot, ... } for the caller to fill. Sheets stack.
 function openSheet(opts) {
   var sheet = el('div', { class: 'sheet' + (opts.full ? ' full' : '') });
   var grabZone = el('div', { class: 'grab-zone' }, [el('div', { class: 'grab' })]);
@@ -442,7 +543,7 @@ function openSheet(opts) {
   requestAnimationFrame(function () { requestAnimationFrame(function () { sheet.classList.add('on'); }); });
   return rec;
 }
-// Drag the handle (or the title area) down to close a sheet, like other Android apps.
+// Lets the user drag a sheet down to close it, like other Android apps.
 function enableDrag(rec, handle) {
   var startY = 0, lastY = 0, lastT = 0, speed = 0, active = false, moved = false;
   function down(y) { startY = lastY = y; lastT = Date.now(); speed = 0; active = true; moved = false; rec.sheet.classList.add('dragging'); }
@@ -483,6 +584,8 @@ function enableDrag(rec, handle) {
   }, { passive: false });
   rec.body.addEventListener('touchend', function () { bodyStart = null; up(); });
 }
+
+// Closes the top sheet. Returns false when no sheet was open (used by the Back button).
 function closeSheet() {
   var rec = sheetStack.pop(); if (!rec) return false;
   rec.sheet.classList.remove('on');
@@ -494,6 +597,7 @@ function closeSheet() {
 $('scrim').addEventListener('click', function () { closeSheet(); });
 
 // Scripture reader
+// Opens a sheet with a passage, a BSB/KJV switch and a Read in NIV button.
 function showScripture(reference) {
   var tr = st.translation;
   var seg = el('div', { class: 'seg' });
@@ -528,6 +632,8 @@ function showScripture(reference) {
 
 // Practice
 var practiceOpen = false;
+
+// The 'type it from memory' sheet: live word check, hints, hold-to-peek and Check answer.
 function showPractice(v, after) {
   if (!v || practiceOpen) return;
   practiceOpen = true;
@@ -573,6 +679,7 @@ function showPractice(v, after) {
   setTimeout(function () { ta.focus(); }, 300);
 }
 
+// Invites the user to read today's verse and then practise it (when no verse is in focus).
 function showDailyInvitation() {
   getDaily().then(function (d) {
     var prev = todaysPracticeVerse(d);
@@ -580,7 +687,7 @@ function showDailyInvitation() {
     rec.body.appendChild(el('div', { class: 'muted small', style: 'margin-bottom:10px', text: !prev ? 'A fresh verse for today' : prev.memorizedAt ? 'A verse you know — take a fresh look today' : prev.passes + ' of 3 correct recitations' }));
     var hero = el('div', { class: 'hero' }, [
       el('div', { class: 'caption', text: 'Read it slowly' }),
-      el('div', { class: 'verse', text: '“' + d.text + '”' }),
+      el('div', { class: 'verse', text: quoted(d.text) }),
       el('div', { class: 'ref', text: d.reference })
     ]);
     rec.body.appendChild(hero);
@@ -593,6 +700,7 @@ function showDailyInvitation() {
   });
 }
 
+// The Add verse / Edit verse sheet. 'Fill in' looks the text up in the chosen translation.
 function showAddVerse(prefRef, prefText) {
   var rec = openSheet({ full: true, caption: 'New memory', title: 'Add a verse', tile: iconTile('plus', 'c-green') });
   var refIn = el('input', { class: 'field', placeholder: 'e.g. Romans 8:28', value: prefRef || '' });
@@ -622,9 +730,11 @@ function showAddVerse(prefRef, prefText) {
 
 // ------------------------------------------------------------------ navigation
 var current = 'today';
-var TITLES = { highlights: 'Highlights', today: 'Today', bible: 'Bible', verses: 'My verses', romans: 'Romans study', more: 'More', journal: 'Reflections', torah: 'Torah readings', settings: 'Settings' };
+var TITLES = { week: 'Week', highlights: 'Highlights', today: 'Today', bible: 'Bible', verses: 'My verses', more: 'More', journal: 'Reflections', torah: 'Torah readings', settings: 'Settings' };
 var TAB_OF = { highlights: 'more', journal: 'more', torah: 'more', settings: 'more' };
 var history = [];
+
+// Shows a page (today, week, bible, ...), highlights its tab and renders it.
 function go(page, noHistory) {
   if (!noHistory && page !== current) history.push(current);
   current = page;
@@ -636,10 +746,16 @@ function go(page, noHistory) {
   $('content').scrollTop = 0;
   render(page);
 }
+
+// Calls the render function for a page.
 function render(page) {
-  ({ today: renderToday, bible: renderBible, verses: renderVerses, romans: renderRomans, more: renderMore, journal: renderJournal, torah: renderTorah, settings: renderSettings, highlights: renderHighlights })[page]();
+  ({ week: renderWeek, today: renderToday, bible: renderBible, verses: renderVerses, more: renderMore, journal: renderJournal, torah: renderTorah, settings: renderSettings, highlights: renderHighlights })[page]();
 }
+
+// Re-renders the current page and the header, and reschedules reminders.
 function refresh() { if (!practiceOpen) render(current); updateSub(); scheduleReminders(); }
+
+// Header subtitle: today's date and Hebrew date.
 function updateSub() {
   var now = new Date();
   $('pageSub').textContent = shortDate(now) + ' ' + now.getFullYear() + '  ·  ' + hebrewDate(now);
@@ -652,12 +768,24 @@ S.back = function () {
 };
 
 // ------------------------------------------------------------------ Today
+// Today's reading plan: Proverbs <day of month>, then Psalms day, day+30 ... up to 150.
 function todayReadings(d) {
   var day = d.getDate(), out = [{ book: 'Proverbs', chapter: day, label: 'Proverbs ' + day }];
   for (var c = day; c <= 150; c += 30) out.push({ book: 'Psalms', chapter: c, label: 'Psalm ' + c });
   return out;
 }
+var renderTodayBase = renderTodayCore;
+// Today page = the core Today content plus the 'Today's tasks' card from the Week page.
 function renderToday() {
+  renderTodayBase();
+  var pg = $('page-today'), hero = pg.querySelector('.hero');
+  var card = weekTodayCard();
+  if (hero && hero.nextSibling) pg.insertBefore(card, hero.nextSibling); else pg.appendChild(card);
+}
+
+// Today page: greeting, verse of the day, current focus, journey count, today's readings
+// and the Explore tiles (Torah, Reflections).
+function renderTodayCore() {
   ensureDaily();
   var pg = $('page-today'); pg.innerHTML = '';
   var now = new Date(), h = now.getHours();
@@ -688,7 +816,7 @@ function renderToday() {
   pg.appendChild(journey);
 
   getDaily().then(function (d) {
-    verseEl.textContent = '“' + d.text + '”'; refEl.textContent = d.reference;
+    verseEl.textContent = quoted(d.text); refEl.textContent = d.reference;
     var focus = getFocus(), dailyPractice = focus ? null : todaysPracticeVerse(d), done = doneToday(dailyPractice, now);
     var title, ref, hint, prog, label, enabled = true;
     if (focus) { title = 'Current focus'; ref = focus.reference; hint = 'Write it from memory when you are ready. Three correct recitations complete a verse.'; prog = 'PASS ' + (focus.passes || 0) + ' / 3'; label = 'Practice now'; }
@@ -714,12 +842,6 @@ function renderToday() {
   pg.appendChild(readings);
 
   pg.appendChild(el('h3', { text: 'Explore' }));
-  var lessonNo = lessonForDate(now), lesson = S.data.romans ? S.data.romans[lessonNo - 1] : null, ws = weekStart(lessonNo);
-  pg.appendChild(el('button', { class: 'card tile', onclick: function () { romansState.lesson = lessonNo; romansState.follow = true; go('romans'); } }, [
-    iconTile('school', 'c-teal'),
-    el('div', { class: 'grow' }, lesson ? [el('div', { class: 'caption', text: 'Romans study' }), el('div', { class: 't1', text: 'Lesson ' + lesson.number + ' · ' + lesson.title }), el('div', { class: 't2', text: lesson.scripture + ' · Wed ' + shortDate(ws) + ' – Tue ' + shortDate(addDays(ws, 6)) })]
-      : [el('div', { class: 'caption', text: 'Romans study' }), el('div', { class: 't1', text: 'Lessons not included' }), el('div', { class: 't2', text: 'Add your own lesson file and rebuild.' })])
-  ]));
   var torah = torahReading(now);
   pg.appendChild(el('button', { class: 'card tile', onclick: function () { go('torah'); } }, [
     iconTile('calendar', 'c-orange'),
@@ -734,7 +856,12 @@ function renderToday() {
 
 // ------------------------------------------------------------------ Bible
 var bibleState = { book: 'Proverbs', chapter: new Date().getDate(), selected: 0 };
+
+// The note saved for a verse key 'Book|chapter|verse', or undefined.
 function noteFor(key) { for (var i = 0; i < st.bibleNotes.length; i++) if (st.bibleNotes[i].key === key) return st.bibleNotes[i]; return null; }
+
+// Bible page: chapter picker, translation switch, today's readings and the chapter's verses
+// (tap a verse to highlight it or write a note).
 function renderBible() {
   var pg = $('page-bible'); pg.innerHTML = '';
   var b = bibleState.book, c = bibleState.chapter;
@@ -770,12 +897,18 @@ function renderBible() {
     card.appendChild(el('div', { class: 'faint small', style: 'padding:10px 8px 2px', text: 'Tap a verse to write a note or add it to your memory collection.' }));
   });
 }
+
+// BSB / KJV segmented switch.
 function transSeg(after) {
   var seg = el('div', { class: 'seg' });
   ['BSB', 'KJV'].forEach(function (c) { seg.appendChild(el('button', { class: st.translation === c ? 'on' : '', text: c, onclick: function () { setTranslation(c); if (after) after(); } })); });
   return seg;
 }
+
+// Changes the Scripture translation everywhere.
 function setTranslation(c) { if (st.translation === c) return; st.translation = c; save(); updateSub(); pushDailyToPhone(true); }
+
+// Moves to the previous/next chapter, crossing into the previous/next book when needed.
 function stepChapter(d) {
   loadBook(bibleState.book, st.translation).then(function (chs) {
     var n = bibleState.chapter + d, idx = BOOKS.indexOf(bibleState.book);
@@ -784,6 +917,8 @@ function stepChapter(d) {
     bibleState.chapter = n; renderBible(); $('content').scrollTop = 0;
   });
 }
+
+// Full-screen book list; tapping a book opens its chapter numbers (accordion).
 function chooseBook() {
   var rec = openSheet({ full: true, caption: 'Browse', title: 'Books', tile: iconTile('book', 'c-purple'), foot: false });
   var open = null, currentRow = null;
@@ -812,12 +947,18 @@ function chooseBook() {
   if (currentRow) setTimeout(function () { currentRow.scrollIntoView({ block: 'start' }); rec.body.scrollTop -= 40; }, 320);
 }
 var HIGHLIGHTS = [["honey", "Honey"], ["apricot", "Apricot"], ["coral", "Coral"], ["blush", "Blush"], ["orchid", "Orchid"], ["lilac", "Lilac"], ["periwinkle", "Periwinkle"], ["sky", "Sky"], ["aqua", "Aqua"], ["mint", "Mint"], ["sage", "Sage"], ["sand", "Sand"]];
+
+// Saves (or removes) a verse highlight colour.
 function setHighlight(key, color) {
   if (color) st.highlights[key] = { color: color, at: new Date().toISOString() };
   else delete st.highlights[key];
   save();
 }
+
+// Highlight colour key for a verse, or ''.
 function highlightOf(key) { var h = st.highlights[key]; return h ? h.color : ''; }
+
+// The 12 highlight colour buttons; tapping the current colour removes it.
 function swatches(key, onPick) {
   var row = el('div', { class: 'swatches' });
   function paint() {
@@ -831,6 +972,8 @@ function swatches(key, onPick) {
   paint();
   return row;
 }
+
+// Sheet for one verse: highlight colours, note box and Memorize this verse.
 function verseSheet(b, c, v, text) {
   var key = b + '|' + c + '|' + v, ref = displayBook(b) + ' ' + c + ':' + v;
   var rec = openSheet({ caption: 'Highlight & note', title: ref, tile: iconTile('palette', 'c-purple') });
@@ -852,6 +995,8 @@ function verseSheet(b, c, v, text) {
 }
 
 var hlFilter = '';
+
+// Highlights page: colour filters and every highlighted verse.
 function renderHighlights() {
   var pg = $('page-highlights'); pg.innerHTML = '';
   var keys = Object.keys(st.highlights).sort(function (a, b) { return (st.highlights[b].at || '') < (st.highlights[a].at || '') ? -1 : 1; });
@@ -878,6 +1023,7 @@ function renderHighlights() {
 }
 
 // ------------------------------------------------------------------ My verses
+// My verses page: focus, in-progress and memorized verses.
 function renderVerses() {
   var pg = $('page-verses'); pg.innerHTML = '';
   pg.appendChild(el('div', { class: 'muted small', style: 'margin:0 2px 12px', text: 'The words you are learning and the words you have learned.' }));
@@ -900,6 +1046,8 @@ function renderVerses() {
     pg.appendChild(card);
   });
 }
+
+// Sheet for a saved verse: its text, wording badge, progress and actions.
 function verseDetail(v) {
   var rec = openSheet({ caption: v.memorizedAt ? '✓ Memorized' : v.id === st.focusId ? '● Current focus' : '○ In progress', title: v.reference, tile: iconTile('library', 'c-green') });
   rec.body.appendChild(el('div', { class: 'scripture', text: v.text }));
@@ -915,150 +1063,11 @@ function verseDetail(v) {
   rec.foot.appendChild(el('button', { class: 'btn primary', text: 'Practice', onclick: function () { closeSheet(); setTimeout(function () { showPractice(v); }, 280); } }));
 }
 
-// ------------------------------------------------------------------ Romans study
-var ANCHOR = new Date(2026, 9, 14); // Lesson 5 began Wednesday 14 October 2026; lessons change each Wednesday.
+// Returns a new Date `n` days after `d`.
 function addDays(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
-function lessonForDate(d) {
-  var day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  var diff = Math.round((day - ANCHOR) / 86400000);
-  return Math.max(1, Math.min(30, 5 + Math.floor(diff / 7)));
-}
-function weekStart(n) { return addDays(ANCHOR, (n - 5) * 7); }
-var romansState = { lesson: lessonForDate(new Date()), follow: true, tab: 'Questions' };
-function questionParts(text) {
-  var re = /^[ \t]*([a-z])\.[ \t]+/gm, markers = [], m;
-  while ((m = re.exec(text))) markers.push({ index: m.index, length: m[0].length, label: m[1] });
-  if (markers.length < 2 || markers[0].label !== 'a') return [{ label: '', text: text, introduction: '' }];
-  var intro = text.slice(0, markers[0].index).trim();
-  return markers.map(function (mk, i) {
-    var start = mk.index + mk.length, end = i + 1 < markers.length ? markers[i + 1].index : text.length;
-    return { label: mk.label, text: text.slice(start, end).trim(), introduction: i === 0 ? intro : '' };
-  });
-}
-function getAnswer(lesson, number, part) {
-  part = part || '';
-  for (var i = 0; i < st.bsfAnswers.length; i++) { var a = st.bsfAnswers[i]; if (+a.lesson === lesson && +a.number === number && (a.part || '') === part) return a; }
-  return null;
-}
-function setAnswer(lesson, number, part, text) {
-  var a = getAnswer(lesson, number, part);
-  if (a && a.text === text) return;
-  if (!a) { a = { lesson: lesson, number: number, part: part, text: text, updatedAt: new Date().toISOString() }; st.bsfAnswers.push(a); }
-  else { a.text = text; a.updatedAt = new Date().toISOString(); }
-  save();
-}
-function renderRomans() {
-  if (!S.data.romans || !S.data.romans.length) {
-    var pg0 = $('page-romans'); pg0.innerHTML = '';
-    pg0.appendChild(el('div', { class: 'card empty' }, [el('div', { style: 'font-weight:700;color:var(--text)', text: 'Romans lessons are not included in this build.' }), el('div', { text: 'Run tools/build_android_data.py with your own StudyData/romans-lessons.json, then rebuild.' })]));
-    return;
-  }
-  if (romansState.follow) romansState.lesson = lessonForDate(new Date());
-  var pg = $('page-romans'); pg.innerHTML = '';
-  var n = romansState.lesson, lesson = S.data.romans[n - 1], ws = weekStart(n), ctx = refContext(lesson.scripture);
-  $('pageTitle').textContent = 'Romans · Lesson ' + n;
-  var head = el('div', { class: 'card' }, [
-    el('div', { class: 'spread' }, [
-      el('div', { class: 'row' }, [iconTile('school', 'c-teal'), el('div', {}, [el('div', { class: 'caption', text: 'Lesson ' + n + (n === lessonForDate(new Date()) ? ' · this week' : '') }), el('div', { style: 'font-weight:700;font-size:18px;line-height:1.25', text: lesson.title })])])
-    ]),
-    el('div', { style: 'margin-top:10px' }, [refChip(lesson.scripture)]),
-    el('div', { class: 'muted small', text: 'Wednesday ' + shortDate(ws) + ' – Tuesday ' + shortDate(addDays(ws, 6)) + ' ' + addDays(ws, 6).getFullYear() }),
-    el('div', { class: 'spread', style: 'margin-top:12px' }, [
-      el('div', { class: 'row', style: 'gap:6px' }, [
-        el('button', { class: 'btn ghost', style: 'padding:8px 12px', disabled: n <= 1, onclick: function () { romansState.lesson--; romansState.follow = false; renderRomans(); } }, [icon('chevL')]),
-        el('button', { class: 'btn ghost', text: 'This week', onclick: function () { romansState.follow = true; renderRomans(); } }),
-        el('button', { class: 'btn ghost', style: 'padding:8px 12px', disabled: n >= 30, onclick: function () { romansState.lesson++; romansState.follow = false; renderRomans(); } }, [icon('chevR')])
-      ]),
-      el('button', { class: 'icon-btn', 'aria-label': 'Export answers', onclick: function () { exportAnswers(n); } }, [icon('share')])
-    ])
-  ]);
-  pg.appendChild(head);
-  var seg = el('div', { class: 'seg', style: 'margin:4px 0 6px' });
-  [['Questions', 'Questions & answers'], ['Notes', 'Lesson ' + (n - 1) + ' notes']].forEach(function (t) {
-    if (t[0] === 'Notes' && n === 1) t[1] = 'Previous notes';
-    seg.appendChild(el('button', { class: romansState.tab === t[0] ? 'on' : '', text: t[1], onclick: function () { romansState.tab = t[0]; renderRomans(); } }));
-  });
-  pg.appendChild(seg);
-  var savedLabel = el('div', { class: 'faint small', style: 'margin:0 4px 4px', text: romansState.tab === 'Questions' ? 'Answers save as you type' : '' });
-  pg.appendChild(savedLabel);
-  if (romansState.tab === 'Notes') { renderNotes(pg, n); return; }
-  var lastDay = '';
-  lesson.questions.forEach(function (q) {
-    var qctx = refContext(q.instruction);
-    if (!qctx.book && q.references && q.references.length) qctx = refContext(q.references[0]);
-    if (!qctx.book) qctx = ctx;
-    if (q.day !== lastDay) {
-      var dh = el('div', { class: 'day-head' });
-      linkify(dh, q.day + '  ·  ' + q.instruction, ctx.book, ctx.chapter);
-      pg.appendChild(dh); lastDay = q.day;
-    }
-    questionParts(q.text).forEach(function (part) {
-      var card = el('div', { class: 'card q-card' }), chipRefs = [];
-      function addChips(f) { f.links.forEach(function (l) { if (chipRefs.indexOf(l.reference) < 0) chipRefs.push(l.reference); }); }
-      if (part.introduction) { var intro = el('div', { class: 'intro' }); addChips(linkify(intro, part.introduction, qctx.book, qctx.chapter)); card.appendChild(intro); }
-      var prompt = el('div', { class: 'prompt' }, [el('span', { class: 'num', text: q.number + part.label + '.  ' })]);
-      addChips(linkify(prompt, part.text, qctx.book, qctx.chapter));
-      card.appendChild(prompt);
-      if (!part.label || part.label === 'a') (q.references || []).slice().reverse().forEach(function (r) { if (chipRefs.indexOf(r) < 0) chipRefs.unshift(r); });
-      if (chipRefs.length) { var chips = el('div', { class: 'chips' }); chipRefs.forEach(function (r) { chips.appendChild(refChip(r)); }); card.appendChild(chips); }
-      var a = getAnswer(n, q.number, part.label);
-      var ta = el('textarea', { class: 'field', placeholder: 'Your answer' }); ta.value = a ? a.text : '';
-      ta.addEventListener('input', debounce(function () { setAnswer(n, q.number, part.label, ta.value); savedLabel.textContent = 'Saved ✓'; }, 400));
-      ta.addEventListener('blur', function () { setAnswer(n, q.number, part.label, ta.value); });
-      card.appendChild(ta);
-      if (part.label === 'a') {
-        var prev = getAnswer(n, q.number, '');
-        if (prev && prev.text.trim()) {
-          card.appendChild(el('div', { class: 'caption', style: 'color:var(--partial);margin-top:12px', text: 'Earlier combined answer · copy into the parts when ready' }));
-          card.appendChild(el('div', { class: 'legacy', text: prev.text }));
-        }
-      }
-      pg.appendChild(card);
-    });
-  });
-}
-function renderNotes(pg, n) {
-  var card = el('div', { class: 'card notes' });
-  if (n <= 1) { card.appendChild(el('p', { text: 'This is the first lesson. There are no earlier lesson notes in the book.' })); pg.appendChild(card); return; }
-  var prev = S.data.romans[n - 2], ctx = refContext(prev.scripture), book = ctx.book, chap = ctx.chapter;
-  card.appendChild(el('div', { class: 'caption accent', text: 'Lesson ' + (n - 1) + ' notes · ' + prev.scripture }));
-  prev.notesPages.forEach(function (page) {
-    card.appendChild(el('div', { class: 'page-label', text: 'PAGE ' + page.printedPage }));
-    page.text.split(/\r?\n\s*\r?\n/).forEach(function (para) {
-      var clean = para.replace(/\s*\r?\n\s*/g, ' ').trim(); if (!clean) return;
-      var p = el('p', { class: clean.length < 60 && !/[.?!:\u201D]$/.test(clean) && !/^●/.test(clean) ? 'h' : '' });
-      var f = linkify(p, clean, book, chap); book = f.book; chap = f.chapter;
-      card.appendChild(p);
-    });
-  });
-  pg.appendChild(card);
-}
-function escHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-function exportHtml(n) {
-  var lesson = S.data.romans[n - 1], out = [];
-  out.push('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Romans Lesson ' + n + ' answers</title>');
-  out.push('<style>body{font:15px/1.55 "Segoe UI",Roboto,Arial,sans-serif;color:#1b1b1f;max-width:800px;margin:30px auto;padding:0 20px}h1{font-size:28px;margin-bottom:3px}header p{color:#5b6370;margin-top:0}.day{font:700 13px Arial,sans-serif;color:#0f6cbd;border-bottom:1px solid #c7d6ea;padding-bottom:7px;margin-top:26px}.question{break-inside:avoid;margin:18px 0 24px}.question h3{font-size:16px;white-space:pre-wrap}.introduction{color:#5b6370;white-space:pre-wrap}.answer{white-space:pre-wrap;border-left:3px solid #0f6cbd;padding:4px 0 4px 13px;min-height:32px}.empty{color:#9da5aa}.legacy{white-space:pre-wrap;color:#586375;background:#f1f4f9;padding:10px;margin-top:12px}footer{margin-top:36px;color:#77818a;font-size:11px}</style></head><body>');
-  out.push('<header><h1>Romans · Lesson ' + n + '</h1><p>' + escHtml(lesson.title) + ' · ' + escHtml(lesson.scripture) + '</p></header>');
-  var lastDay = '';
-  lesson.questions.forEach(function (q) {
-    if (q.day !== lastDay) { out.push('<div class="day">' + escHtml(q.day) + ' · ' + escHtml(q.instruction) + '</div>'); lastDay = q.day; }
-    questionParts(q.text).forEach(function (p) {
-      var a = getAnswer(n, q.number, p.label), t = a ? a.text : '';
-      var legacy = '';
-      if (p.label === 'a') { var e = getAnswer(n, q.number, ''); if (e && e.text.trim()) legacy = '<div class="legacy"><strong>Earlier combined answer:</strong> ' + escHtml(e.text) + '</div>'; }
-      out.push('<section class="question">' + (p.introduction ? '<p class="introduction">' + escHtml(p.introduction) + '</p>' : '') + '<h3>' + q.number + p.label + '. ' + escHtml(p.text) + '</h3><div class="answer' + (t.trim() ? '' : ' empty') + '">' + (t.trim() ? escHtml(t) : 'Answer space') + '</div>' + legacy + '</section>');
-    });
-  });
-  out.push('<footer>Prepared in Selah for personal BSF class study. Questions © Bible Study Fellowship.</footer></body></html>');
-  return out.join('\n');
-}
-function exportAnswers(n) {
-  var html = exportHtml(n), name = 'Selah-Romans-Lesson-' + pad(n);
-  if (Android && Android.printHtml) { Android.printHtml(html, name); return; }
-  var w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); }
-}
 
 // ------------------------------------------------------------------ More, Reflections, Torah, Settings
+// More page: links to Highlights, Reflections, Torah readings and Settings.
 function renderMore() {
   var pg = $('page-more'); pg.innerHTML = '';
   var card = el('div', { class: 'card', style: 'padding:4px 14px' });
@@ -1073,6 +1082,8 @@ function renderMore() {
   ]));
 }
 var journalDate = isoDate(new Date());
+
+// Reflections page: a dated editor that saves as you type, and past entries.
 function renderJournal() {
   var pg = $('page-journal'); pg.innerHTML = '';
   var entry = st.reflections.filter(function (r) { return r.date === journalDate; })[0];
@@ -1104,12 +1115,18 @@ function renderJournal() {
     pg.appendChild(card);
   }
 }
+
+// All readings on the Torah card (weekly portions and festival readings).
 function torahAll() { var t = S.data.torah; return t ? (t.portions || []).concat(t.special || []) : []; }
+
+// The next Torah card reading dated on or after a day.
 function torahReading(d) {
   var today = isoDate(d);
   var list = torahAll().filter(function (r) { return r.date >= today; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
   return list[0] || null;
 }
+
+// Torah readings page: the current reading with its passages and the upcoming list.
 function renderTorah() {
   var pg = $('page-torah'); pg.innerHTML = '';
   if (!S.data.torah) {
@@ -1141,20 +1158,52 @@ function renderTorah() {
   if (card.childNodes.length) { pg.appendChild(el('h3', { text: 'Coming up' })); pg.appendChild(card); }
   pg.appendChild(el('div', { class: 'faint small', style: 'margin:10px 4px', text: "Hebrew date follows the phone's calendar day; the Jewish day changes at sunset." }));
 }
+
+// A settings card row: icon, title, description and a control.
 function settingRow(iconName, color, title, sub, control) {
   return el('div', { class: 'card setting' }, [iconTile(iconName, color), el('div', { class: 'grow' }, [el('div', { class: 't1', text: title }), el('div', { class: 't2', text: sub })]), control]);
 }
+
+// An on/off switch control.
 function toggle(checked, onchange) {
   var input = el('input', { type: 'checkbox' }); input.checked = !!checked;
   input.addEventListener('change', function () { onchange(input.checked); });
   return el('label', { class: 'switch' }, [input, el('span')]);
 }
+
+// Settings > Theme card: Light/Dark cards, Serif/Sans font switch, text size and a preview.
+function readingCard() {
+  var cur = themeInfo(st.theme);
+  var grid = el('div', { class: 'theme-grid' });
+  THEMES.forEach(function (t) {
+    var dots = el('div', { class: 'dots' }, [el('i', { style: 'background:' + t.accent }), el('i', { style: 'background:' + t.text })]);
+    grid.appendChild(el('button', { class: 'theme-card' + (t.name === cur.name ? ' on' : ''), style: 'background:' + t.bg + ';color:' + t.text,
+      onclick: function () { setTheme(t.name); renderSettings(); } }, [el('div', { class: 'aa', text: 'Aa' }), el('div', { class: 'nm', text: t.name }), dots]));
+  });
+  var fontSeg = el('div', { class: 'seg' });
+  [['Serif', 'Serif'], ['Sans', 'Sans']].forEach(function (f) {
+    fontSeg.appendChild(el('button', { class: (st.readFont === 'Sans' ? 'Sans' : 'Serif') === f[0] ? 'on' : '', text: f[1], onclick: function () { st.readFont = f[0]; save(); applyReading(); renderSettings(); } }));
+  });
+  var sizeSeg = el('div', { class: 'seg' });
+  READ_SIZES.forEach(function (z) {
+    sizeSeg.appendChild(el('button', { class: parseInt(st.readSize, 10) === z.px ? 'on' : '', text: z.label, onclick: function () { st.readSize = z.px; save(); applyReading(); renderSettings(); } }));
+  });
+  var preview = el('div', { class: 'read-preview' });
+  preview.innerHTML = '<sup>6</sup>The mind of the flesh is death, but the mind of the Spirit is life and peace,';
+  return el('div', { class: 'card' }, [
+    el('div', { class: 'setting' }, [iconTile('palette', 'c-blue'), el('div', { class: 'grow' }, [el('div', { class: 't1', text: 'Theme' }), el('div', { class: 't2', text: cur.name + ' · ' + cur.note + '. The moon and sun button switches between them.' })])]),
+    grid,
+    el('div', { class: 'spread', style: 'margin-top:14px' }, [el('span', { class: 't1', style: 'font-weight:600', text: 'Font' }), fontSeg]),
+    el('div', { class: 'spread', style: 'margin-top:10px' }, [el('span', { class: 't1', style: 'font-weight:600', text: 'Text size' }), sizeSeg]),
+    preview
+  ]);
+}
+
+// Settings page: theme and reading font, translation, reminders, daily verse time, backup.
 function renderSettings() {
   var pg = $('page-settings'); pg.innerHTML = '';
-  var themeSeg = el('div', { class: 'seg' });
-  ['Light', 'Dark'].forEach(function (t) { themeSeg.appendChild(el('button', { class: st.theme === t ? 'on' : '', text: t, onclick: function () { setTheme(t); renderSettings(); } })); });
   pg.appendChild(el('h3', { style: 'margin-top:4px', text: 'Personalize' }));
-  pg.appendChild(settingRow('palette', 'c-blue', 'Appearance', 'Light is bright and airy; Dark is easier on the eyes at night.', themeSeg));
+  pg.appendChild(readingCard());
   pg.appendChild(settingRow('book', 'c-purple', 'Bible translation', 'BSB reads much like the NIV. NIV text is copyrighted, so passages have a Read in NIV button that opens BibleGateway.', transSeg(function () { renderSettings(); })));
   pg.appendChild(el('h3', { text: 'Rhythm' }));
   var timeIn = el('input', { type: 'time', class: 'field', style: 'width:auto;padding:6px 10px', value: st.dailyNotifyTime || '06:30' });
@@ -1176,21 +1225,28 @@ function renderSettings() {
       el('button', { class: 'btn ghost', onclick: importFile }, [icon('upload'), 'Import file'])
     ])
   ]));
-  pg.appendChild(el('div', { class: 'faint small', style: 'margin:14px 4px', text: 'Selah for Android · Scripture text: Berean Standard Bible (public domain) and King James Version. Romans questions © Bible Study Fellowship, for personal class study.' }));
+  pg.appendChild(el('div', { class: 'faint small', style: 'margin:14px 4px', text: 'Selah for Android · Scripture text: Berean Standard Bible (public domain) and King James Version.' }));
 }
+
+// Saves the whole state as a dated JSON backup file.
 function exportBackup() {
   var text = JSON.stringify(st, null, 1), name = 'selah-backup-' + isoDate(new Date()) + '.json';
   if (Android && Android.saveTextFile) Android.saveTextFile(name, 'application/json', text);
   else { var a = el('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/json' })), download: name }); document.body.appendChild(a); a.click(); a.remove(); }
 }
+
+// Opens a JSON file: a Selah backup (desktop or phone) or a Torah card file.
 function importFile() {
   if (Android && Android.openTextFile) { Android.openTextFile(); return; }
   var input = el('input', { type: 'file', accept: '.json,application/json' });
   input.addEventListener('change', function () { var f = input.files[0]; if (!f) return; var r = new FileReader(); r.onload = function () { S.onFileOpened(String(r.result), f.name); }; r.readAsText(f); });
   input.click();
 }
+
+// Merges an imported backup into the current state without losing anything: newer
+// entries win, nothing is deleted. Returns counts of what changed.
 function mergeState(raw) {
-  var counts = { verses: 0, reflections: 0, notes: 0, answers: 0 };
+  var counts = { verses: 0, reflections: 0, notes: 0 };
   (raw.verses || []).forEach(function (v) {
     if (!v || !v.reference) return;
     var ex = st.verses.filter(function (x) { return x.id === v.id || (x.reference === v.reference && x.text === v.text); })[0];
@@ -1209,13 +1265,8 @@ function mergeState(raw) {
     if (!ex) { st.bibleNotes.push(n); counts.notes++; }
     else if ((n.savedAt || '') > (ex.savedAt || '')) { ex.text = n.text; ex.savedAt = n.savedAt; counts.notes++; }
   });
-  (raw.bsfAnswers || []).forEach(function (a) {
-    if (!a || !a.lesson || !a.number) return;
-    var ex = getAnswer(+a.lesson, +a.number, a.part || '');
-    if (!ex) { st.bsfAnswers.push({ lesson: +a.lesson, number: +a.number, part: a.part || '', text: a.text, updatedAt: a.updatedAt }); counts.answers++; }
-    else if ((a.updatedAt || '') > (ex.updatedAt || '') && a.text !== ex.text) { ex.text = a.text; ex.updatedAt = a.updatedAt; counts.answers++; }
-  });
   if (raw.highlights && typeof raw.highlights === 'object') for (var hk in raw.highlights) { if (!st.highlights[hk]) st.highlights[hk] = raw.highlights[hk]; }
+  counts.weeks = mergeWeeks(raw);
   if (!st.focusId && raw.focusId && getVerse(raw.focusId)) { st.focusId = raw.focusId; st.focusSince = raw.focusSince || new Date().toISOString(); }
   return counts;
 }
@@ -1227,32 +1278,412 @@ S.onFileOpened = function (text, name) {
       if (raw.every(function (r) { return r.number === undefined || r.number === null; })) { t.special = raw; } else { t.portions = raw; }
       localStorage.setItem('selah.torah', JSON.stringify(t)); applyTorah(); toast('Torah readings imported (' + raw.length + ')'); refresh(); return;
     }
-    if (raw && (raw.verses || raw.bsfAnswers || raw.reflections)) {
+    if (raw && (raw.verses || raw.reflections || raw.weeks)) {
       var c = mergeState(raw); save(); refresh();
-      toast('Imported: ' + c.answers + ' answers, ' + c.verses + ' verses, ' + c.reflections + ' reflections, ' + c.notes + ' notes');
+      toast('Imported: ' + c.verses + ' verses, ' + c.reflections + ' reflections, ' + c.notes + ' notes, ' + (c.weeks || 0) + ' weeks');
       return;
     }
     toast('That file is not a Selah backup or Torah file.');
   } catch (e) { toast('Could not read that file.'); }
 };
+
+// The Torah card imported on the phone (kept separately in localStorage).
 function loadTorahStore() { try { return JSON.parse(localStorage.getItem('selah.torah') || '{}') || {}; } catch (e) { return {}; } }
+
+// Uses the imported Torah card when the app was built without one.
 function applyTorah() {
   if (S.data.torah && !S.data.torahMissing) return;
   var t = loadTorahStore();
   if (t.portions || t.special) { S.data.torah = { portions: t.portions || [], special: t.special || [] }; S.data.torahMissing = false; }
 }
 
+// ------------------------------------------------------------------ Week (weekly goals and daily tasks)
+// Shared with the desktop app through the backup file: st.weeks[mondayIso] and st.habits.
+var WEEK_TAGS = ['Work', 'Study', 'Faith', 'Health', 'Family', 'Money', 'Investment', 'Personal'];
+var STATUS_ORDER = ['', 'done', 'partly', 'tried', 'no'];
+var STATUS_LABEL = { '': 'Open', done: 'Done', partly: 'Partly', tried: 'Tried', no: '✕' };
+var BOX_MARK = { '': '', done: '✓', partly: '½', tried: '~', no: '✕' };
+var DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+var weekView = { start: null, day: null };
+
+// Short random id for goals, tasks and habits.
+function wkUid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+// 'yyyy-mm-dd' -> local Date.
+function wkParse(iso) { var p = String(iso).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+
+// Date plus `n` days (time of day dropped).
+function wkAdd(d, n) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() + n); return x; }
+
+// The Monday that starts the week containing a date (weeks run Monday to Sunday).
+function wkMonday(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return wkAdd(x, -((x.getDay() + 6) % 7)); }
+
+// ISO week number (1-53).
+function wkNumber(d) {
+  var t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  var day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day);
+  var y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil(((t - y0) / 86400000 + 1) / 7);
+}
+
+// Next status when a pill/box is tapped: open -> done -> partly -> tried -> no -> open.
+function nextStatus(s) { var i = STATUS_ORDER.indexOf(s || ''); return STATUS_ORDER[(i + 1) % STATUS_ORDER.length]; }
+
+// True for statuses that still need attention (open, partly, tried).
+function isOpenStatus(s) { return !s || s === 'partly' || s === 'tried'; }
+
+// Returns the week starting on a Monday key, creating an empty one when asked.
+function getWeek(startIso, create) {
+  if (!st.weeks || typeof st.weeks !== 'object' || Array.isArray(st.weeks)) st.weeks = {};
+  var w = st.weeks[startIso];
+  if (!w && create) w = st.weeks[startIso] = { words: [], goals: [], days: {}, review: '', updatedAt: new Date().toISOString() };
+  if (w) { w.words = w.words || []; w.goals = w.goals || []; w.days = w.days || {}; }
+  return w;
+}
+
+// Stamps a week as changed (for syncing) and saves.
+function touchWeek(w) { w.updatedAt = new Date().toISOString(); save(); }
+
+// True if a repeating task ('daily' or 'weekdays') belongs on a given day.
+function habitApplies(h, iso) { var wd = (wkParse(iso).getDay() + 6) % 7; return h.repeat === 'daily' || (h.repeat === 'weekdays' && wd < 5); }
+
+// A day's tasks. The first time a day from today on is opened, repeating tasks are added.
+function getDay(w, iso) {
+  if (!w.days[iso]) w.days[iso] = { tasks: [] };
+  var day = w.days[iso]; day.tasks = day.tasks || [];
+  // Daily habits fill themselves in the first time a day from today on is opened.
+  if (!day.habitsAdded && iso >= isoDate(new Date())) {
+    (st.habits || []).forEach(function (h) {
+      if (habitApplies(h, iso) && !day.tasks.some(function (t) { return t.habit === h.id; })) day.tasks.push({ id: wkUid(), text: h.text, status: '', goal: h.goal || null, habit: h.id });
+    });
+    day.habitsAdded = true; touchWeek(w);
+  }
+  return day;
+}
+
+// Finds a day (and its week) by date, without creating it.
+function findDay(iso) { var w = getWeek(isoDate(wkMonday(wkParse(iso))), false); return w && w.days[iso] ? { week: w, day: w.days[iso] } : null; }
+
+// Unfinished, not yet carried tasks from the day before (for 'Bring over').
+function carryCandidates(iso) {
+  var prevIso = isoDate(wkAdd(wkParse(iso), -1)), prev = findDay(prevIso);
+  if (!prev) return { iso: prevIso, tasks: [] };
+  return { iso: prevIso, week: prev.week, tasks: prev.day.tasks.filter(function (t) { return isOpenStatus(t.status) && !t.carried && !t.habit && t.text; }) };
+}
+
+// Counts for the review: goals done, tasks done/total, days with progress.
+function weekStats(w) {
+  var goalsDone = w.goals.filter(function (g) { return g.status === 'done'; }).length, done = 0, total = 0, active = 0;
+  Object.keys(w.days).forEach(function (k) {
+    var ts = w.days[k].tasks || [], any = false;
+    ts.forEach(function (t) { if (t.carried) return; total++; if (t.status === 'done') { done++; any = true; } });
+    if (any) active++;
+  });
+  return { goalsDone: goalsDone, goals: w.goals.length, done: done, total: total, active: active };
+}
+
+// Week page: week header and arrows, words for the week, weekly goals, the Mon-Sun strip,
+// the selected day's tasks with the carry-over banner, and the review on Sunday/past weeks.
+function renderWeek() {
+  var pg = $('page-week'); pg.innerHTML = '';
+  var today = isoDate(new Date());
+  if (!weekView.start) weekView.start = isoDate(wkMonday(new Date()));
+  var start = wkParse(weekView.start), startIso = weekView.start;
+  if (!weekView.day || weekView.day < startIso || weekView.day > isoDate(wkAdd(start, 6))) weekView.day = (today >= startIso && today <= isoDate(wkAdd(start, 6))) ? today : startIso;
+  var w = getWeek(startIso, true), end = wkAdd(start, 6);
+
+  // Header: week number, dates, previous / next week
+  var isThis = startIso === isoDate(wkMonday(new Date()));
+  pg.appendChild(el('div', { class: 'wk-head' }, [
+    el('button', { class: 'icon-btn', 'aria-label': 'Previous week', onclick: function () { weekView.start = isoDate(wkAdd(start, -7)); weekView.day = null; renderWeek(); } }, [icon('chevL')]),
+    el('div', { class: 'grow' }, [
+      el('div', { class: 'wk-title', text: 'Week ' + wkNumber(start) }),
+      el('div', { class: 'muted small', text: shortDate(start) + ' – ' + shortDate(end) + ' ' + end.getFullYear() + (isThis ? '  ·  this week' : '') })
+    ]),
+    isThis ? null : el('button', { class: 'chip', style: 'margin:0', text: 'This week', onclick: function () { weekView.start = null; weekView.day = null; renderWeek(); } }),
+    el('button', { class: 'icon-btn', 'aria-label': 'Next week', onclick: function () { weekView.start = isoDate(wkAdd(start, 7)); weekView.day = null; renderWeek(); } }, [icon('chevR')])
+  ]));
+
+  // Words for the week
+  var words = el('div', { class: 'wk-words' });
+  w.words.forEach(function (word, i) { words.appendChild(el('button', { class: 'wk-word', text: word, onclick: function () { editWord(w, i); } })); });
+  words.appendChild(el('button', { class: 'wk-word add', text: '+ word', onclick: function () { editWord(w, -1); } }));
+  pg.appendChild(el('div', { class: 'hero wk-hero' }, [el('div', { class: 'caption', text: 'Words for this week' }), words]));
+
+  // Day strip
+  var strip = el('div', { class: 'wk-days' });
+  for (var i = 0; i < 7; i++) (function (i) {
+    var d = wkAdd(start, i), iso = isoDate(d), day = w.days[iso], pips = el('div', { class: 'wk-pips' });
+    (day && day.tasks || []).filter(function (t) { return !t.carried; }).slice(0, 6).forEach(function (t) { pips.appendChild(el('i', { class: t.status === 'done' ? 'd' : '' })); });
+    strip.appendChild(el('button', { class: 'wk-day' + (iso === weekView.day ? ' on' : '') + (iso === today ? ' today' : ''), onclick: function () { weekView.day = iso; renderWeek(); } },
+      [el('b', { text: DAY_NAMES[i].slice(0, 3).toUpperCase() }), el('span', { text: String(d.getDate()) }), pips]));
+  })(i);
+  pg.appendChild(strip);
+
+  // Weekly goals
+  var s = weekStats(w);
+  pg.appendChild(el('div', { class: 'caption wk-cap', text: 'Weekly goals' + (w.goals.length ? '  ·  ' + s.goalsDone + ' of ' + w.goals.length + ' done' : '') }));
+  var gcard = el('div', { class: 'card wk-list' });
+  w.goals.forEach(function (g, gi) {
+    gcard.appendChild(el('div', { class: 'wk-row' }, [
+      el('span', { class: 'wk-num', text: String(gi + 1) }),
+      el('button', { class: 'grow wk-text', onclick: function () { editGoal(w, gi); } }, [
+        el('span', { class: g.status === 'done' ? 'wk-done' : '', text: g.text }),
+        g.tag ? el('span', { class: 'wk-tag', text: g.tag.toUpperCase() }) : null,
+        g.moved ? el('div', { class: 'muted small', text: 'Moved to next week' }) : null
+      ]),
+      el('button', { class: 'wk-st s-' + (g.status || 'open'), text: STATUS_LABEL[g.status || ''], onclick: function () { g.status = nextStatus(g.status); touchWeek(w); renderWeek(); } })
+    ]));
+  });
+  gcard.appendChild(addRow('Add a weekly goal', function (text) { w.goals.push({ id: wkUid(), text: text, tag: '', status: '' }); touchWeek(w); renderWeek(); }));
+  pg.appendChild(gcard);
+
+  // Selected day
+  var dIso = weekView.day, dDate = wkParse(dIso), day = getDay(w, dIso);
+  var dayTasks = day.tasks.filter(function (t) { return !t.carried; }), dayDone = dayTasks.filter(function (t) { return t.status === 'done'; }).length;
+  pg.appendChild(el('div', { class: 'wk-dayhead' }, [
+    el('div', { class: 'wk-title', text: DAY_NAMES[(dDate.getDay() + 6) % 7] + ' ' + dDate.getDate() + (dIso === today ? '  ·  today' : '') }),
+    el('div', { class: 'muted small', text: dayTasks.length ? dayDone + ' of ' + dayTasks.length + ' done' : 'No tasks yet' })
+  ]));
+  var carry = carryCandidates(dIso);
+  if (carry.tasks.length && day.carryDismissed !== carry.iso) {
+    var names = carry.tasks.map(function (t) { return '“' + t.text + '”'; }).join(', ');
+    pg.appendChild(el('div', { class: 'wk-carry' }, [
+      el('div', { class: 'grow' }, [el('b', { text: carry.tasks.length + ' not finished on ' + DAY_NAMES[(wkParse(carry.iso).getDay() + 6) % 7] }), el('div', { class: 'small', text: names })]),
+      el('button', { class: 'btn primary', onclick: function () {
+        carry.tasks.forEach(function (t) { day.tasks.push({ id: wkUid(), text: t.text, status: '', goal: t.goal || null, from: carry.iso }); t.carried = true; });
+        touchWeek(carry.week); touchWeek(w); renderWeek(); toast('Brought over ' + carry.tasks.length);
+      } }, ['Bring over']),
+      el('button', { class: 'icon-btn', 'aria-label': 'Not now', onclick: function () { day.carryDismissed = carry.iso; touchWeek(w); renderWeek(); } }, [icon('close')])
+    ]));
+  }
+  var tcard = el('div', { class: 'card wk-list' });
+  day.tasks.forEach(function (t, ti) {
+    if (t.carried) return;
+    var meta = [];
+    if (t.habit) { var h = (st.habits || []).filter(function (x) { return x.id === t.habit; })[0]; meta.push('↻ ' + (h ? (h.repeat === 'weekdays' ? 'weekdays' : 'every day') : 'habit')); }
+    if (t.from) meta.push('from ' + DAY_NAMES[(wkParse(t.from).getDay() + 6) % 7].slice(0, 3));
+    if (t.status && t.status !== 'done') meta.push(STATUS_LABEL[t.status] === '✕' ? 'Did not happen' : STATUS_LABEL[t.status]);
+    tcard.appendChild(el('div', { class: 'wk-row' }, [
+      el('button', { class: 'wk-box b-' + (t.status || 'open'), 'aria-label': 'Status: ' + STATUS_LABEL[t.status || ''], text: BOX_MARK[t.status || ''], onclick: function () { t.status = nextStatus(t.status); touchWeek(w); renderWeek(); } }),
+      el('button', { class: 'grow wk-text', onclick: function () { editTask(w, day, ti); } }, [
+        el('span', { class: t.status === 'done' ? 'wk-done' : '', text: t.text }),
+        meta.length ? el('div', { class: 'muted small', text: meta.join('  ·  ') }) : null
+      ]),
+      t.goal && w.goals[t.goal - 1] ? el('span', { class: 'wk-num', text: String(t.goal) }) : null
+    ]));
+  });
+  tcard.appendChild(addRow('Add a task', function (text) { day.tasks.push({ id: wkUid(), text: text, status: '', goal: null }); touchWeek(w); renderWeek(); }));
+  pg.appendChild(tcard);
+  pg.appendChild(el('div', { class: 'muted small wk-hint', text: 'Tap a box: Done → Partly → Tried → ✕ → open. Tap a task to link it to a goal, repeat it or delete it.' }));
+
+  // Week review (Sunday, or any past week)
+  if ((dDate.getDay() === 0) || isoDate(end) < today) pg.appendChild(reviewCard(w, start));
+}
+
+// An inline 'Add a ...' input; Enter or + adds the item and keeps the cursor there.
+function addRow(placeholder, onAdd) {
+  var input = el('input', { class: 'field wk-add', placeholder: placeholder, enterkeyhint: 'done' });
+  function go2() { var v = input.value.trim(); if (!v) return; input.value = ''; onAdd(v); setTimeout(function () { var n = document.querySelector('#page-week input[placeholder="' + placeholder + '"]'); if (n) n.focus(); }, 30); }
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go2(); } });
+  return el('div', { class: 'wk-addrow' }, [input, el('button', { class: 'icon-btn', 'aria-label': placeholder, onclick: go2 }, [icon('plus')])]);
+}
+
+// Week review: stats, still-open goals (move to next week or let go) and a one-line note.
+function reviewCard(w, start) {
+  var s = weekStats(w), open = w.goals.filter(function (g) { return isOpenStatus(g.status) && !g.moved; });
+  var nextStart = isoDate(wkAdd(start, 7));
+  var card = el('div', { class: 'card wk-review' }, [
+    el('div', { class: 'caption', text: 'Week ' + wkNumber(start) + ' review' }),
+    el('div', { class: 'wk-stats' }, [
+      el('div', {}, [el('b', { text: s.goalsDone + '/' + s.goals }), el('span', { text: 'weekly goals' })]),
+      el('div', {}, [el('b', { text: s.done + '/' + s.total }), el('span', { text: 'daily tasks' })]),
+      el('div', {}, [el('b', { text: String(s.active) }), el('span', { text: 'days with progress' })])
+    ])
+  ]);
+  if (open.length) {
+    card.appendChild(el('div', { style: 'font-weight:700;margin-top:12px', text: 'Still open' }));
+    card.appendChild(el('div', { class: 'muted small', text: open.map(function (g) { return g.text; }).join('  ·  ') }));
+    card.appendChild(el('div', { class: 'row', style: 'gap:8px;margin-top:10px;flex-wrap:wrap' }, [
+      el('button', { class: 'btn pop', onclick: function () {
+        var nw = getWeek(nextStart, true);
+        open.forEach(function (g) { if (!nw.goals.some(function (x) { return x.text === g.text; })) nw.goals.push({ id: wkUid(), text: g.text, tag: g.tag || '', status: '' }); g.moved = true; });
+        touchWeek(nw); touchWeek(w); renderWeek(); toast('Moved ' + open.length + ' to week ' + wkNumber(wkParse(nextStart)));
+      } }, ['Move to week ' + wkNumber(wkParse(nextStart))]),
+      el('button', { class: 'btn ghost', onclick: function () { open.forEach(function (g) { g.status = 'no'; }); touchWeek(w); renderWeek(); } }, ['Let them go'])
+    ]));
+  }
+  var ta = el('textarea', { class: 'field', style: 'margin-top:12px;min-height:70px', placeholder: 'How did this week go? One line for next Monday’s you…' });
+  ta.value = w.review || '';
+  ta.addEventListener('input', function () { w.review = ta.value; touchWeek(w); });
+  card.appendChild(ta);
+  return card;
+}
+
+// A small segmented control for choosing one option in a sheet.
+function segOf(options, current, onPick) {
+  var seg = el('div', { class: 'seg wk-seg' });
+  options.forEach(function (o) {
+    var b = el('button', { class: (o[0] === current ? 'on' : ''), text: o[1] });
+    b.addEventListener('click', function () { seg.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); }); b.classList.add('on'); onPick(o[0]); });
+    seg.appendChild(b);
+  });
+  return seg;
+}
+
+// Sheet to add, edit or remove a word for the week.
+function editWord(w, i) {
+  var rec = openSheet({ caption: 'Words for this week', title: i < 0 ? 'Add a word or phrase' : 'Edit' });
+  var input = el('input', { class: 'field', placeholder: 'e.g. Do hard things' }); input.value = i < 0 ? '' : w.words[i];
+  rec.body.appendChild(input);
+  rec.foot.appendChild(i < 0 ? el('span') : el('button', { class: 'btn ghost', onclick: function () { w.words.splice(i, 1); touchWeek(w); closeSheet(); renderWeek(); } }, ['Remove']));
+  rec.foot.appendChild(el('button', { class: 'btn primary', onclick: function () {
+    var v = input.value.trim(); if (!v) { closeSheet(); return; }
+    if (i < 0) w.words.push(v); else w.words[i] = v; touchWeek(w); closeSheet(); renderWeek();
+  } }, ['Save']));
+  setTimeout(function () { input.focus(); }, 250);
+}
+
+// Sheet to rename, tag or delete a weekly goal (deleting renumbers task links).
+function editGoal(w, gi) {
+  var g = w.goals[gi], tag = g.tag || '';
+  var rec = openSheet({ caption: 'Weekly goal ' + (gi + 1), title: 'Edit goal' });
+  var input = el('input', { class: 'field' }); input.value = g.text;
+  rec.body.appendChild(input);
+  rec.body.appendChild(el('div', { class: 'caption', style: 'margin:14px 0 8px', text: 'Tag' }));
+  var tags = el('div', { class: 'wk-words' });
+  [''].concat(WEEK_TAGS).forEach(function (t) {
+    var b = el('button', { class: 'chip' + (t === tag ? ' on' : ''), text: t || 'None' });
+    b.addEventListener('click', function () { tag = t; tags.querySelectorAll('.chip').forEach(function (x) { x.classList.remove('on'); }); b.classList.add('on'); });
+    tags.appendChild(b);
+  });
+  rec.body.appendChild(tags);
+  rec.foot.appendChild(el('button', { class: 'btn ghost', onclick: function () {
+    w.goals.splice(gi, 1);
+    // Keep task links pointing at the right goal numbers.
+    Object.keys(w.days).forEach(function (k) { (w.days[k].tasks || []).forEach(function (t) { if (t.goal === gi + 1) t.goal = null; else if (t.goal > gi + 1) t.goal--; }); });
+    touchWeek(w); closeSheet(); renderWeek();
+  } }, ['Delete']));
+  rec.foot.appendChild(el('button', { class: 'btn primary', onclick: function () { var v = input.value.trim(); if (v) g.text = v; g.tag = tag; touchWeek(w); closeSheet(); renderWeek(); } }, ['Save']));
+}
+
+// Sheet to rename a task, link it to a goal, make it repeat, or delete it.
+function editTask(w, day, ti) {
+  var t = day.tasks[ti], goal = t.goal || null;
+  var habit = t.habit ? (st.habits || []).filter(function (h) { return h.id === t.habit; })[0] : null;
+  var repeat = habit ? habit.repeat : '';
+  var rec = openSheet({ caption: 'Task', title: 'Edit task' });
+  var input = el('input', { class: 'field' }); input.value = t.text;
+  rec.body.appendChild(input);
+  if (w.goals.length) {
+    rec.body.appendChild(el('div', { class: 'caption', style: 'margin:14px 0 8px', text: 'Counts toward weekly goal' }));
+    rec.body.appendChild(segOf([[null, 'None']].concat(w.goals.map(function (g, i) { return [i + 1, String(i + 1)]; })), goal, function (v) { goal = v; }));
+  }
+  rec.body.appendChild(el('div', { class: 'caption', style: 'margin:14px 0 8px', text: 'Repeat' }));
+  rec.body.appendChild(segOf([['', 'Just today'], ['weekdays', 'Weekdays'], ['daily', 'Every day']], repeat, function (v) { repeat = v; }));
+  rec.body.appendChild(el('div', { class: 'muted small', style: 'margin-top:8px', text: 'Repeating tasks appear by themselves on the days ahead.' }));
+  rec.foot.appendChild(el('button', { class: 'btn ghost', onclick: function () { day.tasks.splice(ti, 1); touchWeek(w); closeSheet(); renderWeek(); } }, ['Delete']));
+  rec.foot.appendChild(el('button', { class: 'btn primary', onclick: function () {
+    var v = input.value.trim(); if (v) t.text = v; t.goal = goal;
+    st.habits = st.habits || [];
+    if (repeat) {
+      if (habit) { habit.text = t.text; habit.repeat = repeat; habit.goal = goal; }
+      else { habit = { id: wkUid(), text: t.text, repeat: repeat, goal: goal }; st.habits.push(habit); t.habit = habit.id; }
+      // Add it to the days ahead in this week that are already open.
+      Object.keys(w.days).forEach(function (k) {
+        if (k <= weekView.day) return;
+        var d = w.days[k]; if (habitApplies(habit, k) && !d.tasks.some(function (x) { return x.habit === habit.id; })) d.tasks.push({ id: wkUid(), text: habit.text, status: '', goal: goal, habit: habit.id });
+      });
+    } else if (habit) {
+      st.habits.splice(st.habits.indexOf(habit), 1); delete t.habit;
+    }
+    touchWeek(w); closeSheet(); renderWeek();
+  } }, ['Save']));
+}
+
+// Merges weeks and habits from a backup: for each week the newer copy (updatedAt) wins.
+function mergeWeeks(raw) {
+  var n = 0;
+  if (raw.weeks && typeof raw.weeks === 'object') {
+    if (!st.weeks || typeof st.weeks !== 'object') st.weeks = {};
+    for (var k in raw.weeks) {
+      var mine = st.weeks[k], theirs = raw.weeks[k];
+      if (!theirs) continue;
+      if (!mine || (theirs.updatedAt || '') > (mine.updatedAt || '')) { st.weeks[k] = theirs; n++; }
+    }
+  }
+  if (Array.isArray(raw.habits)) {
+    st.habits = st.habits || [];
+    raw.habits.forEach(function (h) { if (h && h.id && !st.habits.some(function (x) { return x.id === h.id; })) st.habits.push(h); });
+  }
+  return n;
+}
+
+// The small 'Today's tasks' card on the Today page; tapping it opens the Week tab.
+function weekTodayCard() {
+  var iso = isoDate(new Date()), w = getWeek(isoDate(wkMonday(new Date())), false);
+  var day = w && w.days[iso], tasks = day ? day.tasks.filter(function (t) { return !t.carried; }) : [];
+  var done = tasks.filter(function (t) { return t.status === 'done'; }).length;
+  var next = tasks.filter(function (t) { return t.status !== 'done' && t.status !== 'no'; }).slice(0, 3).map(function (t) { return t.text; });
+  return el('button', { class: 'card setting wk-todaycard', onclick: function () { weekView.start = null; weekView.day = null; go('week'); } }, [
+    iconTile('check', 'c-green'),
+    el('div', { class: 'grow' }, [
+      el('div', { class: 't1', text: tasks.length ? 'Today’s tasks · ' + done + ' of ' + tasks.length + ' done' : (w && w.goals.length ? 'Plan today’s tasks' : 'Set this week’s goals') }),
+      el('div', { class: 't2', text: next.length ? next.join('  ·  ') : (tasks.length ? 'All done. Well done.' : 'Open your week to write them down.') })
+    ]),
+    el('span', { class: 'chev' }, [icon('chevR')])
+  ]);
+}
+
 // ------------------------------------------------------------------ theme
+var THEMES = [
+  { name: 'Light', dark: false, bg: '#F7F7F1', bar: '#F7F7F1', text: '#0A0A0A', accent: '#C7FF2E', note: 'Chalk white and ink, with a lime accent' },
+  { name: 'Dark',  dark: true,  bg: '#0A0A0A', bar: '#0A0A0A', text: '#F7F7F1', accent: '#C7FF2E', note: 'Ink black and mist, with a lime accent' }
+];
+var READ_SIZES = [{ label: 'S', px: 15 }, { label: 'M', px: 17 }, { label: 'L', px: 19 }, { label: 'XL', px: 21 }];
+
+// Details of a theme (colours for the bars and settings cards); unknown names map to Light/Dark.
+function themeInfo(name) {
+  for (var i = 0; i < THEMES.length; i++) if (THEMES[i].name === name) return THEMES[i];
+  // Themes from older versions: dark ones become Dark, the rest Light.
+  return /^(Dusk|Midnight|Harbor Night)$/.test(name) ? THEMES[1] : THEMES[0];
+}
+
+// Applies the reading font (Serif/Sans) and text size through CSS variables.
+function applyReading() {
+  var root = document.documentElement.style;
+  var size = parseInt(st.readSize, 10); if (!(size >= 13 && size <= 24)) size = 17;
+  root.setProperty('--read-size', size + 'px');
+  root.setProperty('--read-font', st.readFont === 'Sans' ? 'var(--sans)' : 'var(--serif)');
+}
+
+// Switches Light/Dark: sets data-theme/data-mode on <html>, updates the moon/sun button
+// and tells Android which colours to use for the status and navigation bars.
 function setTheme(t) {
-  st.theme = t === 'Dark' ? 'Dark' : 'Light'; save();
-  if (st.theme === 'Dark') document.documentElement.setAttribute('data-theme', 'dark'); else document.documentElement.removeAttribute('data-theme');
-  $('themeBtn').innerHTML = ''; $('themeBtn').appendChild(icon(st.theme === 'Dark' ? 'sun' : 'moon'));
-  if (Android && Android.setDarkTheme) Android.setDarkTheme(st.theme === 'Dark');
+  var th = themeInfo(t);
+  st.theme = th.name;
+  if (th.dark) st.lastDark = th.name; else st.lastLight = th.name;
+  save();
+  var de = document.documentElement;
+  if (th.name === 'Light') de.removeAttribute('data-theme'); else de.setAttribute('data-theme', th.name.toLowerCase());
+  if (th.dark) de.setAttribute('data-mode', 'dark'); else de.removeAttribute('data-mode');
+  applyReading();
+  $('themeBtn').innerHTML = ''; $('themeBtn').appendChild(icon(th.dark ? 'sun' : 'moon'));
+  if (Android && Android.setBarColors) Android.setBarColors(th.bar, th.bg, th.dark);
+}
+
+// The moon/sun button: switches between the light and dark theme.
+function toggleDayNight() {
+  var th = themeInfo(st.theme);
+  setTheme(th.dark ? (st.lastLight && !themeInfo(st.lastLight).dark ? st.lastLight : 'Light')
+                   : (st.lastDark && themeInfo(st.lastDark).dark ? st.lastDark : 'Dark'));
 }
 
 // ------------------------------------------------------------------ reminders
 var REMINDER_TIMES = ['10:00', '12:30', '14:00', '16:30'];
 var lastScheduleKey = '';
+
+// Asks Android to schedule the four daily practice notifications (only when something changed).
 function scheduleReminders(force) {
   if (!Android || !Android.scheduleReminders) return;
   var f = getFocus();
@@ -1262,6 +1693,8 @@ function scheduleReminders(force) {
   lastScheduleKey = key;
   Android.scheduleReminders(!!st.remindersOn, 'A moment to remember', body);
 }
+
+// Between 10:00 and 17:00, opens practice (or the daily invitation) for a reminder that is due.
 function checkReminder(fromNotification) {
   if (practiceOpen || sheetStack.length) return;
   var now = new Date();
@@ -1286,6 +1719,7 @@ function checkReminder(fromNotification) {
 S.onReminder = function () { go('today', true); setTimeout(function () { checkReminder(true); }, 350); };
 
 // ------------------------------------------------------------------ passage search
+// The search sheet: type a reference such as 'John 3:16' or 'Psalm 23' to read it.
 function showSearch() {
   var rec = openSheet({ caption: 'Open a passage', title: 'Where would you like to read?', tile: iconTile('search', 'c-blue') });
   var input = el('input', { class: 'field', placeholder: 'e.g. Romans 8:28, Psalm 23, John 3', enterkeyhint: 'go' });
@@ -1305,6 +1739,8 @@ function showSearch() {
 }
 
 // ------------------------------------------------------------------ start
+// Start-up: load state, draw icons, wire the tab bar and header buttons, apply the theme,
+// show Today and schedule reminders.
 function init() {
   loadState();
   applyTorah();
@@ -1313,9 +1749,9 @@ function init() {
   $('searchBtn').appendChild(icon('search'));
   $('fab').appendChild(icon('plus'));
   document.querySelectorAll('#tabbar [data-icon]').forEach(function (p) { p.appendChild(icon(p.getAttribute('data-icon'))); });
-  document.querySelectorAll('#tabbar button').forEach(function (b) { b.addEventListener('click', function () { var t = b.getAttribute('data-tab'); history = []; if (t === 'romans') romansState.follow = true; go(t, true); }); });
+  document.querySelectorAll('#tabbar button').forEach(function (b) { b.addEventListener('click', function () { var t = b.getAttribute('data-tab'); history = []; go(t, true); }); });
   $('searchBtn').addEventListener('click', showSearch);
-  $('themeBtn').addEventListener('click', function () { setTheme(st.theme === 'Dark' ? 'Light' : 'Dark'); });
+  $('themeBtn').addEventListener('click', toggleDayNight);
   $('logoBtn').addEventListener('click', function () { history = []; go('today', true); });
   $('fab').addEventListener('click', function () { showAddVerse(); });
   setTheme(st.theme);
@@ -1337,6 +1773,6 @@ function init() {
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { var now = isoDate(new Date()); if (now !== day) { day = now; ensureDaily(); refresh(); } } });
 }
 // Exposed for testing
-S.debug = { verseMatches: verseMatches, liveWords: liveWords, planAhead: planAhead, findRefs: findRefs, parsePassages: parsePassages, lessonForDate: lessonForDate, weekStart: weekStart, hebrewDate: hebrewDate, getDaily: getDaily, st: function () { return st; }, go: go, showScripture: showScripture, showPractice: showPractice, getFocus: getFocus, addVerse: addVerse, questionParts: questionParts, mergeState: mergeState, exportHtml: exportHtml };
+S.debug = { verseMatches: verseMatches, liveWords: liveWords, planAhead: planAhead, findRefs: findRefs, parsePassages: parsePassages, hebrewDate: hebrewDate, getDaily: getDaily, st: function () { return st; }, go: go, showScripture: showScripture, showPractice: showPractice, getFocus: getFocus, addVerse: addVerse, mergeState: mergeState, setTheme: setTheme, themes: THEMES, weekView: weekView, getWeek: getWeek, getDay: getDay, renderWeek: renderWeek, wkMonday: wkMonday, isoDate: isoDate };
 init();
 })();

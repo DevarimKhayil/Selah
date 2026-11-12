@@ -9,7 +9,6 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.print.PrintManager;
 import android.view.View;
 import android.view.Window;
 import android.webkit.JavascriptInterface;
@@ -26,23 +25,27 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 
-/** Selah for Android: hosts the offline web app and bridges reminders, printing and files. */
+/** Selah for Android: hosts the offline web app and bridges reminders and files. */
 public class MainActivity extends Activity {
     static final String EXTRA_REMINDER = "app.selah.REMINDER";
     private static final int REQ_SAVE = 41, REQ_OPEN = 42, REQ_NOTIFY = 43;
     private WebView web;
-    private WebView printView;
     private String pendingSaveText;
     private boolean pendingReminder;
     private boolean darkTheme;
+    private int barColor, bgColor;
 
+    /** Sets up the window colours and the WebView, adds the JavaScript bridge and loads the web app. */
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        darkTheme = getSharedPreferences("selah", MODE_PRIVATE).getBoolean("dark", false);
+        SharedPreferences prefs0 = getSharedPreferences("selah", MODE_PRIVATE);
+        darkTheme = prefs0.getBoolean("dark", false);
+        barColor = prefs0.getInt("barColor", darkTheme ? Color.rgb(10, 10, 10) : Color.rgb(247, 247, 241));
+        bgColor = prefs0.getInt("bgColor", darkTheme ? Color.rgb(10, 10, 10) : Color.rgb(247, 247, 241));
         applyBars();
         web = new WebView(this);
-        web.setBackgroundColor(darkTheme ? Color.rgb(15, 18, 23) : Color.rgb(243, 245, 250));
+        web.setBackgroundColor(bgColor);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -68,6 +71,7 @@ public class MainActivity extends Activity {
         web.loadUrl("file:///android_asset/www/index.html");
     }
 
+    /** Called when a notification reopens the running app; tells the web app to open practice. */
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -76,6 +80,7 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Back button: lets the web app close a sheet or go back a page first; otherwise Selah moves to the background. */
     @Override
     public void onBackPressed() {
         web.evaluateJavascript("(window.Selah && Selah.back) ? Selah.back() : false", new ValueCallback<String>() {
@@ -85,9 +90,10 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Colours the status and navigation bars to match the current theme (light or dark icons). */
     private void applyBars() {
         Window w = getWindow();
-        int bar = darkTheme ? Color.rgb(22, 26, 33) : Color.rgb(246, 248, 252);
+        int bar = barColor;
         w.setStatusBarColor(bar);
         w.setNavigationBarColor(bar);
         View decor = w.getDecorView();
@@ -101,17 +107,20 @@ public class MainActivity extends Activity {
         decor.setSystemUiVisibility(flags);
     }
 
+    /** Opens a link (e.g. BibleGateway) in the browser. */
     private void openExternal(String url) {
         try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
         catch (Exception e) { Toast.makeText(this, "No browser found to open the link.", Toast.LENGTH_SHORT).show(); }
     }
 
+    /** Android 13+ needs permission to show notifications; ask once at start-up. */
     private void askNotificationPermission() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != 0) {
             requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, REQ_NOTIFY);
         }
     }
 
+    /** Receives the file the user picked (backup import) or the place chosen to save one. */
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -144,6 +153,7 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Escapes a Java string so it can be passed safely into JavaScript code. */
     static String jsString(String s) {
         StringBuilder b = new StringBuilder("\"");
         for (int i = 0; i < s.length(); i++) {
@@ -164,11 +174,13 @@ public class MainActivity extends Activity {
 
     /** Methods called from JavaScript as window.SelahAndroid.* */
     class Bridge {
+        /** JavaScript: open a web link outside the app. */
         @JavascriptInterface
         public void openUrl(final String url) {
             runOnUiThread(new Runnable() { public void run() { openExternal(url); } });
         }
 
+        /** JavaScript: true once if the app was opened from a practice notification. */
         @JavascriptInterface
         public boolean consumeReminder() {
             boolean r = pendingReminder;
@@ -176,15 +188,21 @@ public class MainActivity extends Activity {
             return r;
         }
 
+        /** JavaScript: status/navigation bar and page colours for the chosen theme ("#RRGGBB"). */
         @JavascriptInterface
-        public void setDarkTheme(final boolean dark) {
+        public void setBarColors(final String bar, final String bg, final boolean dark) {
             runOnUiThread(new Runnable() { public void run() {
                 darkTheme = dark;
-                getSharedPreferences("selah", MODE_PRIVATE).edit().putBoolean("dark", dark).apply();
+                try { barColor = Color.parseColor(bar); } catch (Exception e) { barColor = dark ? Color.rgb(10, 10, 10) : Color.rgb(247, 247, 241); }
+                try { bgColor = Color.parseColor(bg); } catch (Exception e) { bgColor = dark ? Color.rgb(10, 10, 10) : Color.rgb(247, 247, 241); }
+                getSharedPreferences("selah", MODE_PRIVATE).edit().putBoolean("dark", dark)
+                    .putInt("barColor", barColor).putInt("bgColor", bgColor).apply();
+                if (web != null) web.setBackgroundColor(bgColor);
                 applyBars();
             } });
         }
 
+        /** JavaScript: turn the four daily practice notifications on/off and set their text. */
         @JavascriptInterface
         public void scheduleReminders(final boolean enabled, final String title, final String body) {
             runOnUiThread(new Runnable() { public void run() {
@@ -195,12 +213,14 @@ public class MainActivity extends Activity {
             } });
         }
 
+        /** JavaScript: store the next 60 days of daily verses for notifications and widgets. */
         @JavascriptInterface
         public void setDailyPlan(final String json, final String translation) {
             getSharedPreferences("selah", MODE_PRIVATE).edit().putString("plan", json).putString("translation", translation).apply();
             runOnUiThread(new Runnable() { public void run() { DailyVerse.updateWidgets(MainActivity.this); } });
         }
 
+        /** JavaScript: turn the morning verse notification on/off and set its time (HH:mm). */
         @JavascriptInterface
         public void setDailySchedule(final boolean enabled, final String time) {
             runOnUiThread(new Runnable() { public void run() {
@@ -210,6 +230,7 @@ public class MainActivity extends Activity {
             } });
         }
 
+        /** JavaScript: show the verse notification now (Settings test button). */
         @JavascriptInterface
         public void testDailyNotification() {
             runOnUiThread(new Runnable() { public void run() {
@@ -218,21 +239,7 @@ public class MainActivity extends Activity {
             } });
         }
 
-        @JavascriptInterface
-        public void printHtml(final String html, final String name) {
-            runOnUiThread(new Runnable() { public void run() {
-                printView = new WebView(MainActivity.this);
-                printView.setWebViewClient(new WebViewClient() {
-                    @Override
-                    public void onPageFinished(WebView view, String url) {
-                        PrintManager pm = (PrintManager) getSystemService(Context.PRINT_SERVICE);
-                        pm.print(name, view.createPrintDocumentAdapter(name), null);
-                    }
-                });
-                printView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
-            } });
-        }
-
+        /** JavaScript: let the user choose where to save a file (backups). */
         @JavascriptInterface
         public void saveTextFile(final String name, final String mime, final String text) {
             runOnUiThread(new Runnable() { public void run() {
@@ -246,6 +253,7 @@ public class MainActivity extends Activity {
             } });
         }
 
+        /** JavaScript: let the user pick a JSON file to import; its text goes back to Selah.onFileOpened. */
         @JavascriptInterface
         public void openTextFile() {
             runOnUiThread(new Runnable() { public void run() {
@@ -258,6 +266,7 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Intent that opens Selah from a notification or the widget (optionally straight into practice). */
     static PendingIntent openAppIntent(Context ctx, boolean reminder) {
         Intent i = new Intent(ctx, MainActivity.class);
         i.putExtra(EXTRA_REMINDER, reminder);

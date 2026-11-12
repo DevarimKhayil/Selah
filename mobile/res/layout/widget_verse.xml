@@ -3,23 +3,23 @@
     android:id="@+id/widget_root"
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:background="@drawable/widget_bg"
-    android:paddingLeft="18dp" android:paddingRight="18dp" android:paddingTop="12dp" android:paddingBottom="12dp">
+    android:paddingLeft="12dp" android:paddingRight="12dp" android:paddingTop="8dp" android:paddingBottom="8dp">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:gravity="center_vertical">
-        <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_stat"/>
+        <ImageView android:layout_width="10dp" android:layout_height="10dp" android:alpha="0.85" android:src="@drawable/ic_stat"/>
         <TextView android:id="@+id/verse_label" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:layout_marginLeft="8dp"
-            android:text="VERSE OF THE DAY" android:textColor="#D9E7FF" android:textSize="11sp"
-            android:textStyle="bold" android:letterSpacing="0.06" android:singleLine="true"/>
+            android:layout_height="wrap_content" android:layout_marginLeft="5dp"
+            android:text="VERSE OF THE DAY" android:textColor="#C7FF2E" android:textSize="8sp"
+            android:textStyle="bold" android:letterSpacing="0.08" android:singleLine="true"/>
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Selah" android:textColor="#B9CEF5" android:textSize="11sp"/>
+            android:text="Selah" android:textColor="#C9D0D6" android:textSize="8sp"/>
     </LinearLayout>
     <TextView android:id="@+id/verse_text" android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:layout_marginTop="8dp"
-        android:text="Open Selah once to load your verses." android:textColor="#FFFFFF"
-        android:textSize="16sp" android:fontFamily="sans-serif-medium"
-        android:lineSpacingMultiplier="1.1" android:maxLines="30" android:gravity="center_vertical"/>
+        android:layout_weight="1" android:layout_marginTop="4dp"
+        android:text="Open Selah once to load your verses." android:textColor="#F7F7F1"
+        android:textSize="13sp" android:fontFamily="sans-serif-medium"
+        android:lineSpacingMultiplier="1.05" android:maxLines="30" android:gravity="center_vertical"/>
     <TextView android:id="@+id/verse_ref" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="6dp" android:text="Selah" android:textColor="#E8F1FF"
-        android:textSize="13sp" android:textStyle="bold" android:gravity="right"/>
+        android:layout_marginTop="2dp" android:text="Selah" android:textColor="#F7F7F1"
+        android:textSize="10sp" android:textStyle="bold" android:gravity="right"/>
 </LinearLayout>

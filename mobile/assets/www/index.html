@@ -1,4 +1,10 @@
 <!doctype html>
+<!--
+  Selah phone app shell. The page sections below are filled by app.js (one <section> per page),
+  the tab bar switches between them, and #sheets holds bottom-sheet dialogs.
+  Script order matters: data/pool.js (daily verses and book list) and data/torah.js (optional
+  Torah card) load first, then app.js. Bible books (bible/BSB, bible/KJV) are loaded on demand.
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -6,13 +12,19 @@
 <title>Selah</title>
 <link rel="stylesheet" href="app.css">
 <script>
+  // Shared namespace: data files and Bible book files register themselves here.
   window.Selah = { data: {}, bible: {}, waiting: {} };
   Selah.bookLoaded = function (tr, book, chapters) {
     Selah.bible[tr + '|' + book] = chapters;
     (Selah.waiting[tr + '|' + book] || []).forEach(function (f) { f(chapters); });
     delete Selah.waiting[tr + '|' + book];
   };
-  try { if (JSON.parse(localStorage.getItem('selah.state') || '{}').theme === 'Dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+  // Apply the saved Light/Dark theme before the page paints, so there is no white flash.
+  try {
+    var t0 = JSON.parse(localStorage.getItem('selah.state') || '{}').theme, de = document.documentElement;
+    if (/^(Dark|Dusk|Midnight|Harbor Night)$/.test(t0)) de.setAttribute('data-theme', 'dark');
+    if (/^(Dark|Dusk|Midnight|Harbor Night)$/.test(t0)) de.setAttribute('data-mode', 'dark');
+  } catch (e) {}
 </script>
 </head>
 <body>
@@ -25,9 +37,9 @@
 
 <main id="content">
   <section class="page" id="page-today"></section>
+  <section class="page" id="page-week"></section>
   <section class="page" id="page-bible"></section>
   <section class="page" id="page-verses"></section>
-  <section class="page" id="page-romans"></section>
   <section class="page" id="page-more"></section>
   <section class="page" id="page-highlights"></section>
   <section class="page" id="page-journal"></section>
@@ -39,9 +51,9 @@
 
 <nav id="tabbar">
   <button data-tab="today"><span class="pill" data-icon="home"></span>Today</button>
+  <button data-tab="week"><span class="pill" data-icon="calendar"></span>Week</button>
   <button data-tab="bible"><span class="pill" data-icon="book"></span>Bible</button>
   <button data-tab="verses"><span class="pill" data-icon="library"></span>My verses</button>
-  <button data-tab="romans"><span class="pill" data-icon="school"></span>Romans</button>
   <button data-tab="more"><span class="pill" data-icon="more"></span>More</button>
 </nav>
 
@@ -50,7 +62,6 @@
 <div id="toast"></div>
 
 <script src="data/pool.js"></script>
-<script src="data/romans.js" onerror="Selah.data.romansMissing = true"></script>
 <script src="data/torah.js" onerror="Selah.data.torahMissing = true"></script>
 <script src="app.js"></script>
 </body>

@@ -1,4 +1,19 @@
-﻿param([switch]$TestMode, [string]$SnapshotPath, [ValidateSet('Home','Bible','Highlights','Library','Journal','Torah','Bsf','BsfNotes','Settings')][string]$SnapshotPage = 'Home', [ValidateSet('','Light','Dark')][string]$SnapshotTheme = '')
+﻿# =====================================================================================
+# Selah.ps1 - the Selah desktop app (Windows PowerShell 5.1 + WPF).
+#
+# How this file is organised:
+#   1. Startup safety: error trap, hidden console, single-instance lock.
+#   2. App state: the in-memory lists that mirror %LOCALAPPDATA%\Selah\state.json.
+#   3. Themes: the Chalk Light/Dark palettes and Set-Theme.
+#   4. Saving and loading state.json.
+#   5. Verses, the daily verse and practice (type from memory, hints, peek).
+#   6. Shortcuts, settings, page switching and the Home / My verses / Reflections / Bible pages.
+#   7. Reminders, then window creation, event wiring, the tray icon and the 30-second timer.
+# Other features live in StudyFeatures.ps1 (Scripture, Torah), BibleFeatures.ps1 (highlights,
+# book list) and WeekFeatures.ps1 (Week page), which are dot-sourced into this script's scope.
+# Save this file as UTF-8 with BOM, or Windows PowerShell will misread its special characters.
+# =====================================================================================
+param([switch]$TestMode, [string]$SnapshotPath, [ValidateSet('Home','Week','Bible','Highlights','Library','Journal','Torah','Settings')][string]$SnapshotPage = 'Home', [ValidateSet('','Light','Dark')][string]$SnapshotTheme = '')
 
 trap {
     # Show any startup problem instead of closing silently (Selah runs without a console window).
@@ -33,6 +48,7 @@ public static class SelahNative {
     }
 } catch { }
 
+# Allow only one copy of Selah at a time (a named mutex); a second launch explains and exits.
 $script:instanceMutex = $null
 if (-not $TestMode) {
     $createdNew = $false
@@ -44,16 +60,19 @@ if (-not $TestMode) {
     }
 }
 
+# ------------------------------------------------------------------ App state
+# The WPF application object. It keeps running when the window is closed (Selah lives in the tray).
 $script:app = [System.Windows.Application]::new()
 $script:app.ShutdownMode = [System.Windows.ShutdownMode]::OnExplicitShutdown
+# Where user data lives. Tests point SELAH_DATA_DIR at a temporary folder.
 $script:dataDir = if ($env:SELAH_DATA_DIR) { $env:SELAH_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'Selah' }
 $script:dataFile = Join-Path $script:dataDir 'state.json'
+# In-memory copies of what state.json stores. Save-State writes them back.
 $script:verses = [System.Collections.Generic.List[object]]::new()
 $script:reflections = [System.Collections.Generic.List[object]]::new()
 $script:bibleNotes = [System.Collections.Generic.List[object]]::new()
 $script:delivered = [System.Collections.Generic.List[string]]::new()
 $script:dailyUsed = [System.Collections.Generic.List[int]]::new()
-$script:bsfAnswers = [System.Collections.Generic.List[object]]::new()
 $script:focusId = ''
 $script:focusSince = ''
 $script:offerDailyWhenNoFocus = $true
@@ -62,7 +81,10 @@ $script:theme = 'Light'
 $script:translation = 'BSB'
 $script:dailyPoolVersion = 2
 $script:referenceRegex = $null
+# The 446-verse daily pool (references only; text comes from the chosen translation).
 $script:dailyVerses = [object[]](Get-Content -LiteralPath (Join-Path $PSScriptRoot 'daily-verses.json') -Raw -Encoding UTF8 | ConvertFrom-Json)
+# Reads one personal study file from StudyData (for example the Torah card).
+# Returns an empty array when the file is missing, so Selah still starts without it.
 # Personal study files (not in the public repository). Selah still runs when they are missing.
 function Read-StudyJson([string]$name) {
     $path = Join-Path $PSScriptRoot "StudyData\$name"
@@ -71,11 +93,9 @@ function Read-StudyJson([string]$name) {
 }
 $script:torahPortions = Read-StudyJson 'torah-portions.json'
 $script:torahSpecialReadings = Read-StudyJson 'torah-special-readings.json'
-$script:bsfLessons = Read-StudyJson 'romans-lessons.json'
 $script:allBibleBookNames = [object[]](Get-Content -LiteralPath (Join-Path $PSScriptRoot 'BibleData\Books.json') -Raw -Encoding UTF8 | ConvertFrom-Json)
-$script:bsfLessonNumber = 0
-$script:bsfFollowCurrent = $true
-$script:bsfTab = 'Questions'
+# Runtime-only values: loaded Bible books, which page/date/chapter is open, and flags that stop
+# event handlers from reacting to changes made by the code itself.
 $script:bibleCache = @{}
 $script:torahCurrent = $null
 $script:journalDate = (Get-Date).ToString('yyyy-MM-dd')
@@ -86,8 +106,11 @@ $script:bibleChapter = (Get-Date).Day
 $script:bibleVerseKey = ''
 $script:quitting = $false
 $script:practiceOpen = $false
+# Named controls from MainWindow.xaml, filled once the window is loaded (see 'Main window' below).
 $script:ui = @{}
 
+# Loads a .xaml window or control from disk and returns the WPF object.
+# Windows get the Selah icon and a title bar that follows Light/Dark.
 function Load-Xaml([string]$path) {
     $reader = [System.Xml.XmlReader]::Create($path)
     try { $loaded = [System.Windows.Markup.XamlReader]::Load($reader) }
@@ -99,6 +122,8 @@ function Load-Xaml([string]$path) {
     return $loaded
 }
 
+# Asks Windows (DWM attribute 20, 'immersive dark mode') to draw the window's title bar
+# dark or light so it matches the current theme. Fails quietly on older Windows.
 function Set-TitleBarTheme($targetWindow) {
     try {
         $handle = [System.Windows.Interop.WindowInteropHelper]::new($targetWindow).Handle
@@ -109,46 +134,48 @@ function Set-TitleBarTheme($targetWindow) {
 }
 
 # ------------------------------------------------------------------ Themes
+# Colour keys used across the XAML files (Text, Card, Accent, Pop, ...). Values are '#RRGGBB' or
+# '#AARRGGBB'. Bg/Hero lists become WindowBg/HeroBrush; with equal colours they are flat fills.
 $script:palettes = @{
+    # Chalk palette: chalk #F7F7F1 (60%), ink #0A0A0A (30%), lime #C7FF2E (10%), mist #C9D0D6, slate #6F7780.
     Light = @{
-        Pane = '#B8FFFFFF'; Card = '#E0FFFFFF'; CardHover = '#FFFFFFFF'; CardAlt = '#B3EDF2F9'; CardBorder = '#1A1F3A5F'
-        Field = '#FFFFFFFF'; FieldBorder = '#C9D1DC'; Control = '#F2FFFFFF'; ControlBorder = '#1F1F3A5F'
-        Hover = '#141F3A5F'; Divider = '#E1E6ED'; DialogBg = '#F3F6FA'
-        Text = '#1B1B1F'; TextSecondary = '#5B6370'; TextTertiary = '#8A919C'
-        Accent = '#0F6CBD'; AccentHover = '#115EA3'; AccentText = '#FFFFFF'; AccentSoft = '#DCEAF9'; AccentSoftHover = '#C8DDF5'
-        Success = '#107C10'; SuccessSoft = '#DFF6DD'; Partial = '#6B4FBB'; PartialSoft = '#ECE6FA'; Warning = '#C4314B'; WarningSoft = '#FDE7E9'
-        ScrollThumb = '#665B6370'
-        Bg = @('#E4ECF7', '#F3F5FA', '#E9EFF8'); BloomA = '#5A8FE6'; BloomB = '#9A85E8'; BloomAlpha = 0x55
-        Hero = @('#0F6CBD', '#2B57D6', '#5B3FC4')
+        Pane = '#EEEFEA'; Card = '#EEEFEA'; CardHover = '#E6E8E3'; CardAlt = '#E4E7E8'; CardBorder = '#170A0A0A'
+        Field = '#FBFBF7'; FieldBorder = '#C9D0D6'; Control = '#FBFBF7'; ControlBorder = '#1F0A0A0A'
+        Hover = '#0F0A0A0A'; Divider = '#DDE1E5'; DialogBg = '#F7F7F1'
+        Text = '#0A0A0A'; TextSecondary = '#555D66'; TextTertiary = '#6F7780'
+        Accent = '#0A0A0A'; AccentHover = '#26282B'; AccentText = '#F7F7F1'; AccentSoft = '#DDE1E5'; AccentSoftHover = '#C9D0D6'
+        Success = '#3F6B1F'; SuccessSoft = '#E6F5CF'; Partial = '#555D66'; PartialSoft = '#E4E7E8'; Warning = '#A33A2C'; WarningSoft = '#F2DED9'
+        Pop = '#C7FF2E'; PopHover = '#D6FF66'; PopText = '#0A0A0A'
+        HeroText = '#F7F7F1'; HeroCaption = '#C7FF2E'; TileBg = '#0A0A0A'; TileFg = '#C7FF2E'
+        ScrollThumb = '#666F7780'
+        Bg = @('#F7F7F1', '#F7F7F1', '#F7F7F1')
+        Hero = @('#0A0A0A', '#0A0A0A')
     }
     Dark = @{
-        Pane = '#B81B1F27'; Card = '#D9232833'; CardHover = '#F22B313D'; CardAlt = '#B31E232C'; CardBorder = '#1FFFFFFF'
-        Field = '#171B22'; FieldBorder = '#3A4250'; Control = '#2A303B'; ControlBorder = '#1FFFFFFF'
-        Hover = '#17FFFFFF'; Divider = '#2E3440'; DialogBg = '#161A21'
-        Text = '#F2F4F7'; TextSecondary = '#AEB6C2'; TextTertiary = '#7D8694'
-        Accent = '#5CAAF5'; AccentHover = '#7BBBF7'; AccentText = '#06182B'; AccentSoft = '#1E3756'; AccentSoftHover = '#274668'
-        Success = '#6CCB5F'; SuccessSoft = '#1E3A22'; Partial = '#B9A5FF'; PartialSoft = '#2E2A47'; Warning = '#FF99A4'; WarningSoft = '#442229'
-        ScrollThumb = '#66AEB6C2'
-        Bg = @('#0E1116', '#141922', '#0F131A'); BloomA = '#2F6FD0'; BloomB = '#6B4FBB'; BloomAlpha = 0x3A
-        Hero = @('#1A5FA8', '#2E49B8', '#4A33A6')
+        Pane = '#161718'; Card = '#161718'; CardHover = '#1D1F21'; CardAlt = '#111213'; CardBorder = '#17F7F7F1'
+        Field = '#111213'; FieldBorder = '#33373C'; Control = '#1D1F21'; ControlBorder = '#1FF7F7F1'
+        Hover = '#0FF7F7F1'; Divider = '#26292D'; DialogBg = '#0A0A0A'
+        Text = '#F7F7F1'; TextSecondary = '#C9D0D6'; TextTertiary = '#8B939C'
+        Accent = '#C9D0D6'; AccentHover = '#DDE2E6'; AccentText = '#0A0A0A'; AccentSoft = '#23262A'; AccentSoftHover = '#2E3236'
+        Success = '#A8D86A'; SuccessSoft = '#1C2612'; Partial = '#C9D0D6'; PartialSoft = '#23262A'; Warning = '#F09484'; WarningSoft = '#33160F'
+        Pop = '#C7FF2E'; PopHover = '#D6FF66'; PopText = '#0A0A0A'
+        HeroText = '#F7F7F1'; HeroCaption = '#C7FF2E'; TileBg = '#23262A'; TileFg = '#C7FF2E'
+        ScrollThumb = '#668B939C'
+        Bg = @('#0A0A0A', '#0A0A0A', '#0A0A0A')
+        Hero = @('#161718', '#161718')
     }
 }
 
+# Turns a hex colour such as '#F7F7F1' (or '#AARRGGBB') into a frozen WPF brush.
+# Frozen brushes are faster and can be shared between windows.
 function New-ColorBrush([string]$hex) {
     $brush = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.ColorConverter]::ConvertFromString($hex))
     $brush.Freeze()
     return $brush
 }
 
-function New-BloomBrush([string]$hex, [int]$alpha) {
-    $color = [System.Windows.Media.ColorConverter]::ConvertFromString($hex)
-    $center = [System.Windows.Media.Color]::FromArgb($alpha, $color.R, $color.G, $color.B)
-    $edge = [System.Windows.Media.Color]::FromArgb(0, $color.R, $color.G, $color.B)
-    $brush = [System.Windows.Media.RadialGradientBrush]::new($center, $edge)
-    $brush.Freeze()
-    return $brush
-}
-
+# Builds a diagonal gradient from a list of colours (the Chalk theme passes the same colour
+# several times, which gives a flat fill).
 function New-GradientBrush([string[]]$colors) {
     $brush = [System.Windows.Media.LinearGradientBrush]::new()
     $brush.StartPoint = [System.Windows.Point]::new(0,0)
@@ -160,8 +187,13 @@ function New-GradientBrush([string[]]$colors) {
     return $brush
 }
 
+# Switches the whole app to the Light or Dark Chalk palette.
+# Every colour in $script:palettes is written into Application.Resources, and controls that use
+# DynamicResource/SetResourceReference repaint immediately. Old theme names from phone backups
+# (Dusk, Midnight, Harbor Night) map to Dark; anything else maps to Light.
 function Set-Theme([string]$name) {
-    if ($name -ne 'Dark') { $name = 'Light' }
+    # Older phone backups may carry themes that no longer exist: dark ones become Dark, the rest Light.
+    $name = if ($name -in @('Dark','Dusk','Midnight','Harbor Night')) { 'Dark' } else { 'Light' }
     $script:theme = $name
     $palette = $script:palettes[$name]
     $resources = $script:app.Resources
@@ -171,8 +203,6 @@ function Set-Theme([string]$name) {
     }
     $resources['WindowBg'] = New-GradientBrush $palette.Bg
     $resources['HeroBrush'] = New-GradientBrush $palette.Hero
-    $resources['BloomA'] = New-BloomBrush $palette.BloomA $palette.BloomAlpha
-    $resources['BloomB'] = New-BloomBrush $palette.BloomB $palette.BloomAlpha
     if ($script:window) {
         Set-TitleBarTheme $script:window
         foreach ($owned in $script:window.OwnedWindows) { Set-TitleBarTheme $owned }
@@ -189,6 +219,9 @@ function Set-Theme([string]$name) {
     }
 }
 
+# Writes everything the user owns to state.json (verses, reflections, notes, highlights, weeks,
+# settings). It writes to a temporary file first and then swaps it in, keeping state.bak as the
+# previous copy, so a crash mid-save can never leave a half-written file.
 function Save-State {
     [System.IO.Directory]::CreateDirectory($script:dataDir) | Out-Null
     $state = [pscustomobject]@{
@@ -198,7 +231,6 @@ function Save-State {
         bibleNotes = @($script:bibleNotes.ToArray())
         delivered = @($script:delivered.ToArray())
         dailyUsed = @($script:dailyUsed.ToArray())
-        bsfAnswers = @($script:bsfAnswers.ToArray())
         highlights = Get-HighlightsForSave
         focusId = $script:focusId
         focusSince = $script:focusSince
@@ -207,8 +239,10 @@ function Save-State {
         dailyPoolVersion = $script:dailyPoolVersion
         theme = $script:theme
         translation = $script:translation
+        weeks = $script:weeks
+        habits = @($script:habits.ToArray())
     }
-    $json = ConvertTo-Json -InputObject $state -Depth 8
+    $json = ConvertTo-Json -InputObject $state -Depth 12
     $tempFile = Join-Path $script:dataDir ('state.' + [guid]::NewGuid().ToString('N') + '.tmp')
     [System.IO.File]::WriteAllText($tempFile, $json, [System.Text.UTF8Encoding]::new($false))
     try {
@@ -222,6 +256,8 @@ function Save-State {
     }
 }
 
+# Reads state.json at startup and fills the in-memory lists. Missing fields keep their defaults.
+# If the file cannot be read the user is told where the backup is instead of losing data.
 function Load-State {
     if (-not [System.IO.File]::Exists($script:dataFile)) { return }
     try {
@@ -232,7 +268,14 @@ function Load-State {
         foreach ($d in @($raw.delivered)) { if ($d) { $script:delivered.Add([string]$d) } }
         foreach ($index in @($raw.dailyUsed)) { if ($null -ne $index) { $script:dailyUsed.Add([int]$index) } }
         Read-Highlights $raw.highlights
-        foreach ($answer in @($raw.bsfAnswers)) { if ($null -ne $answer -and $answer.lesson -and $answer.number) { $script:bsfAnswers.Add($answer) } }
+        Read-WeekData $raw
+        # Romans (BSF) study was removed. Keep a one-time copy of any old answers beside state.json.
+        if ($null -ne $raw.bsfAnswers -and @($raw.bsfAnswers).Count) {
+            $archive = Join-Path $script:dataDir 'bsf-answers-archive.json'
+            if (-not [System.IO.File]::Exists($archive)) {
+                [System.IO.File]::WriteAllText($archive, (ConvertTo-Json -InputObject @($raw.bsfAnswers) -Depth 4), [System.Text.UTF8Encoding]::new($false))
+            }
+        }
         $script:focusId = [string]$raw.focusId
         $script:focusSince = [string]$raw.focusSince
         if ($null -ne $raw.offerDailyWhenNoFocus) { $script:offerDailyWhenNoFocus = [bool]$raw.offerDailyWhenNoFocus }
@@ -249,17 +292,20 @@ function Load-State {
     }
 }
 
+# Finds a saved verse by its id, or returns $null.
 function Get-Verse([string]$id) {
     foreach ($v in $script:verses) { if ($v.id -eq $id) { return $v } }
     return $null
 }
 
+# Returns the verse currently being memorized (the 'focus'), unless it is already memorized.
 function Get-Focus {
     $v = Get-Verse $script:focusId
     if ($null -ne $v -and -not $v.memorizedAt) { return $v }
     return $null
 }
 
+# Makes a saved verse the focus for practice reminders and remembers when that started.
 function Set-Focus([string]$id) {
     $v = Get-Verse $id
     if ($null -eq $v -or $v.memorizedAt) { return }
@@ -269,6 +315,8 @@ function Set-Focus([string]$id) {
     Update-View
 }
 
+# Makes sure today's verse of the day is chosen. A verse is picked at random from the
+# 446-verse pool, never repeating until every verse has been shown once.
 function Ensure-DailyVerse {
     $today = (Get-Date).ToString('yyyy-MM-dd')
     if ($null -ne $script:daily -and $script:daily.date -eq $today -and
@@ -291,6 +339,8 @@ function Ensure-DailyVerse {
     Save-State
 }
 
+# Returns the verse-of-the-day reference and its text in the chosen translation.
+# 'startsWith' trims Psalm headings so the verse starts where the pool entry says.
 function Get-DailyVerse([int]$index = -1) {
     if ($index -lt 0) { $index = [int]$script:daily.index }
     $entry = $script:dailyVerses[$index]
@@ -302,6 +352,7 @@ function Get-DailyVerse([int]$index = -1) {
     return [pscustomobject]@{ reference = [string]$entry.reference; text = $text.Trim() }
 }
 
+# The 'Another' button: picks a different, not-yet-seen verse for today.
 function New-DailyVerse {
     # "Another" on the home card: choose a different, not-yet-seen verse for today.
     $today = (Get-Date).ToString('yyyy-MM-dd')
@@ -316,6 +367,8 @@ function New-DailyVerse {
     Update-View
 }
 
+# Saves a new memory verse (or reuses an identical one) and optionally makes it the focus.
+# $source records where it came from: 'personal', 'daily' or 'bible'.
 function Add-Verse([string]$reference, [string]$text, [bool]$makeFocus = $true, [string]$source = 'personal') {
     $reference = $reference.Trim()
     $text = $text.Trim()
@@ -341,6 +394,8 @@ function Add-Verse([string]$reference, [string]$text, [bool]$makeFocus = $true, 
     return $v
 }
 
+# Simplifies text for comparing answers: lower case, letters and digits only, single spaces.
+# This is why capitals and punctuation never count against the user.
 function Normalize-Verse([string]$text) {
     # Dashes (-, –, —) separate words, so "come—the" can be typed as "come the".
     $clean = [regex]::Replace($text.ToLowerInvariant(), '\p{Pd}+', ' ')
@@ -348,6 +403,7 @@ function Normalize-Verse([string]$text) {
     return ([regex]::Replace($clean, '\s+', ' ')).Trim()
 }
 
+# True when the typed answer has the same words as the verse (spacing ignored).
 function Test-VerseMatch([string]$answerText, [string]$verseText) {
     # Words must match; "come the", "come-the" and "comethe" are all accepted for "come—the".
     $a = Normalize-Verse $answerText
@@ -355,10 +411,13 @@ function Test-VerseMatch([string]$answerText, [string]$verseText) {
     return ($a -eq $b) -or ($a.Replace(' ', '') -eq $b.Replace(' ', ''))
 }
 
+# Splits text into words. Dashes count as spaces, so 'come-the' and 'come—the' are two words.
 function Split-VerseWords([string]$text) {
     return @(([regex]::Replace($text, '\p{Pd}+', ' ')).Trim() -split '\s+' | Where-Object { $_ })
 }
 
+# Marks each typed word as correct, partial (the word being typed and so far right) or wrong.
+# Used by the green/coral live word check under the answer box.
 function Get-LiveWords([string]$answerText, [string]$verseText) {
     $expected = @(Split-VerseWords $verseText | Where-Object { (Normalize-Verse $_) })
     $typed = @(Split-VerseWords $answerText)
@@ -375,6 +434,7 @@ function Get-LiveWords([string]$answerText, [string]$verseText) {
     }
 }
 
+# Index of the first word the user has not typed correctly yet (where a hint should help).
 function Get-HintIndex([string]$answerText, [string]$verseText) {
     $expected = @(Split-VerseWords $verseText | Where-Object { (Normalize-Verse $_) })
     $typed = @(Split-VerseWords $answerText)
@@ -384,6 +444,8 @@ function Get-HintIndex([string]$answerText, [string]$verseText) {
     return $index
 }
 
+# Builds the hint message for the next word. Each press of Hint shows one more letter,
+# up to three letters; short words are shown whole.
 function Get-NextHint([string]$answerText, [string]$verseText, [int]$level = 1) {
     $expected = @(Split-VerseWords $verseText | Where-Object { (Normalize-Verse $_) })
     $typed = @(Split-VerseWords $answerText)
@@ -391,11 +453,62 @@ function Get-NextHint([string]$answerText, [string]$verseText, [int]$level = 1) 
     while ($index -lt $typed.Count -and $index -lt $expected.Count -and
            (Normalize-Verse ([string]$typed[$index])) -eq (Normalize-Verse ([string]$expected[$index]))) { $index++ }
     if ($index -ge $expected.Count) { return 'You have reached the end. Check your answer.' }
-    $next = Normalize-Verse ([string]$expected[$index])
-    if ($level -ge 2) { return ('Hint: word {0} is "{1}".' -f ($index + 1), ([string]$expected[$index]).Trim([char[]]',.;:!?"''')) }
-    return ('Hint: word {0} begins with "{1}". Press Hint again to see the whole word.' -f ($index + 1), $next.Substring(0,1).ToUpperInvariant())
+    # Each press shows one more letter of the next word, up to three letters.
+    $word = ([string]$expected[$index]).Trim([char[]](',.;:!?"''()[]' + [char]0x201C + [char]0x201D + [char]0x2018 + [char]0x2019))
+    if (-not $word) { $word = [string]$expected[$index] }
+    $level = [math]::Max(1, [math]::Min(3, $level))
+    if ($word.Length -le $level) { return ('Hint: word {0} is "{1}".' -f ($index + 1), $word) }
+    $shown = $word.Substring(0, $level) + [char]0x2026
+    if ($level -lt 3) { return ('Hint: word {0} starts with "{1}". Press Hint again for one more letter.' -f ($index + 1), $shown) }
+    return ('Hint: word {0} starts with "{1}". That is as far as Hint goes; you have got this.' -f ($index + 1), $shown)
 }
 
+# Hold-to-peek: shows the verse with the word the user is up to underlined in lime,
+# and scrolls the peek panel so that word is visible.
+# Peek: mark the word you are up to and scroll the verse so that word is in view.
+function Show-PeekAt($answer, [string]$verseText, $peekText, $peekScroll) {
+    $peekText.Inlines.Clear()
+    $target = Get-HintIndex $answer.Text $verseText
+    $count = 0
+    $mark = $null
+    $position = 0
+    foreach ($m in [regex]::Matches($verseText, '\S+')) {
+        $words = @(Split-VerseWords $m.Value | Where-Object { (Normalize-Verse $_) }).Count
+        if ($null -eq $mark -and $words -gt 0 -and $target -lt ($count + $words)) {
+            if ($m.Index -gt $position) { $peekText.Inlines.Add([System.Windows.Documents.Run]::new($verseText.Substring($position, $m.Index - $position))) }
+            $mark = [System.Windows.Documents.Run]::new($m.Value)
+            $mark.SetResourceReference([System.Windows.Documents.TextElement]::ForegroundProperty, 'HeroCaption')
+            $mark.TextDecorations = [System.Windows.TextDecorations]::Underline
+            $peekText.Inlines.Add($mark)
+            $position = $m.Index + $m.Length
+        }
+        $count += $words
+    }
+    if ($position -lt $verseText.Length) { $peekText.Inlines.Add([System.Windows.Documents.Run]::new($verseText.Substring($position))) }
+    $peekScroll.ScrollToTop()
+    if ($null -eq $mark) { return }
+    try {
+        $peekScroll.UpdateLayout()
+        $rect = $mark.ContentStart.GetCharacterRect([System.Windows.Documents.LogicalDirection]::Forward)
+        $peekScroll.ScrollToVerticalOffset([math]::Max(0, $rect.Top - 40))
+    } catch { }
+}
+
+# Keeps the live word check scrolled to the word under the text cursor.
+# At the end of the answer it simply scrolls to the bottom.
+# Keep the live word check scrolled to the word being typed.
+function Show-CaretWord($answer, $panel, $scroll) {
+    if ($panel.Children.Count -eq 0) { $scroll.ScrollToTop(); return }
+    $before = $answer.Text.Substring(0, [math]::Min($answer.CaretIndex, $answer.Text.Length))
+    $index = @(Split-VerseWords $before).Count - 1
+    if ($before -match '[\s\p{Pd}]$') { $index++ }
+    $index = [math]::Max(0, [math]::Min($index, $panel.Children.Count - 1))
+    if ($index -ge $panel.Children.Count - 1) { $scroll.ScrollToEnd(); return }
+    $panel.UpdateLayout()
+    $panel.Children[$index].BringIntoView()
+}
+
+# Rebuilds the coloured word chips under the answer box from Get-LiveWords.
 function Update-WordFeedback([string]$answerText, [string]$verseText, $panel) {
     $panel.Children.Clear()
     foreach ($word in @(Get-LiveWords $answerText $verseText)) {
@@ -420,12 +533,16 @@ function Update-WordFeedback([string]$answerText, [string]$verseText, $panel) {
     }
 }
 
+# Hides every place the verse is visible on the main window while practice is open,
+# so the user cannot read the answer behind the dialog.
 function Hide-PracticeSources {
     $script:ui.DailyText.Text = 'Verse hidden while you practice.'
     $script:ui.SelectedText.Text = 'Verse hidden while you practice.'
     $script:ui.BibleVersesPanel.Visibility = 'Hidden'
 }
 
+# Opens the Add verse / Edit verse dialog. 'Fill in' looks the text up in the chosen
+# translation; saving validates both fields and then adds or updates the verse.
 function Show-AddVerse($editVerse = $null) {
     $dialog = Load-Xaml (Join-Path $PSScriptRoot 'AddVerseWindow.xaml')
     $dialog.Owner = $script:window
@@ -472,6 +589,8 @@ function Show-AddVerse($editVerse = $null) {
     }
 }
 
+# Counts one correct recitation. Three passes move a verse into the memorized collection.
+# For an already memorized verse it only records the review date. Returns the message to show.
 function Record-Pass($verse) {
     if ($verse.memorizedAt) {
         if ($null -eq $verse.PSObject.Properties['lastReviewedAt']) { $verse | Add-Member -NotePropertyName lastReviewedAt -NotePropertyValue $null }
@@ -502,6 +621,8 @@ function Record-Pass($verse) {
     return "Passed! $($verse.passes) of 3 correct recitations completed."
 }
 
+# Works out whether a saved verse uses BSB wording, KJV wording or the user's own wording.
+# Shown as a small badge in the practice dialog.
 function Get-WordingSource($verse) {
     # Which wording is this verse saved in? Compared word-for-word with the BSB and KJV text.
     $saved = Normalize-Verse ([string]$verse.text)
@@ -519,6 +640,8 @@ function Get-WordingSource($verse) {
     return [pscustomobject]@{ label = 'Your own wording'; icon = [string][char]0xE70F; color = 'Partial'; tip = 'You typed or pasted this wording yourself. It is not the BSB or KJV text. Edit it in My verses if you want to practise a Bible translation instead.' }
 }
 
+# Opens the 'Type it from memory' dialog for a verse: blurs the main window, wires up the
+# live word check, hints, hold-to-peek and Check answer, then records a pass when correct.
 function Show-Practice($verse, [bool]$scheduled = $false) {
     if ($null -eq $verse -or $script:practiceOpen) { return }
     $script:practiceOpen = $true
@@ -536,6 +659,7 @@ function Show-Practice($verse, [bool]$scheduled = $false) {
         $feedback = $dialog.FindName('FeedbackLabel')
         $hint = $dialog.FindName('HintLabel')
         $wordPanel = $dialog.FindName('WordFeedbackPanel')
+        $wordScroll = $dialog.FindName('WordFeedbackScroll')
         $dialog.FindName('PracticeReference').Text = $verse.reference
         $wording = Get-WordingSource $verse
         $dialog.FindName('SourceLabel').Text = $wording.label
@@ -544,13 +668,27 @@ function Show-Practice($verse, [bool]$scheduled = $false) {
         $dialog.FindName('SourceLabel').SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, $wording.color)
         $dialog.FindName('SourceIcon').SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, $wording.color)
         $peekPanel = $dialog.FindName('PeekPanel')
-        $dialog.FindName('PeekText').Text = [string]$verse.text
+        $peekText = $dialog.FindName('PeekText')
+        $peekScroll = $dialog.FindName('PeekScroll')
+        $peekText.Text = [string]$verse.text
         $dialog.FindName('PeekCaption').Text = ('PEEK  ·  ' + $wording.label.ToUpperInvariant() + '  ·  RELEASE TO HIDE')
         $peekButton = $dialog.FindName('PeekButton')
-        $peekButton.Add_PreviewMouseLeftButtonDown({ $peekPanel.Visibility = 'Visible'; $script:peeks++ })
+        $peekButton.Add_PreviewMouseLeftButtonDown({ $peekPanel.Visibility = 'Visible'; Show-PeekAt $answer ([string]$verse.text) $peekText $peekScroll; $script:peeks++ })
+        # While holding, the mouse wheel scrolls the verse.
+        $peekButton.Add_PreviewMouseWheel({
+            if ($peekPanel.Visibility -eq 'Visible') { $peekScroll.ScrollToVerticalOffset($peekScroll.VerticalOffset - ($_.Delta / 3)); $_.Handled = $true }
+        })
         $peekButton.Add_PreviewMouseLeftButtonUp({ $peekPanel.Visibility = 'Collapsed'; $answer.Focus() | Out-Null })
         $peekButton.Add_MouseLeave({ $peekPanel.Visibility = 'Collapsed' })
-        $peekButton.Add_PreviewKeyDown({ if ($_.Key -eq 'Space' -or $_.Key -eq 'Return') { $peekPanel.Visibility = 'Visible'; $_.Handled = $true } })
+        $peekButton.Add_PreviewKeyDown({
+            if ($_.Key -eq 'Space' -or $_.Key -eq 'Return') {
+                if ($peekPanel.Visibility -ne 'Visible') { $peekPanel.Visibility = 'Visible'; Show-PeekAt $answer ([string]$verse.text) $peekText $peekScroll; $script:peeks++ }
+                $_.Handled = $true
+            } elseif ($peekPanel.Visibility -eq 'Visible' -and ($_.Key -eq 'Down' -or $_.Key -eq 'Up')) {
+                $step = if ($_.Key -eq 'Down') { 40 } else { -40 }
+                $peekScroll.ScrollToVerticalOffset($peekScroll.VerticalOffset + $step); $_.Handled = $true
+            }
+        })
         $peekButton.Add_PreviewKeyUp({ if ($_.Key -eq 'Space' -or $_.Key -eq 'Return') { $peekPanel.Visibility = 'Collapsed'; $_.Handled = $true } })
         $script:peeks = 0
         $dialog.FindName('LaterButton').Add_Click({ $dialog.DialogResult = $false })
@@ -558,19 +696,21 @@ function Show-Practice($verse, [bool]$scheduled = $false) {
         $script:hintLevel = 0
         $dialog.FindName('HintButton').Add_Click({
             $wordIndex = Get-HintIndex $answer.Text $verse.text
-            if ($wordIndex -eq $script:hintWord) { $script:hintLevel++ } else { $script:hintWord = $wordIndex; $script:hintLevel = 1 }
+            if ($wordIndex -eq $script:hintWord) { $script:hintLevel = [math]::Min(3, $script:hintLevel + 1) } else { $script:hintWord = $wordIndex; $script:hintLevel = 1 }
             $hint.Text = Get-NextHint $answer.Text $verse.text $script:hintLevel
         })
         $answer.Add_TextChanged({
             Update-WordFeedback $answer.Text $verse.text $wordPanel
+            Show-CaretWord $answer $wordPanel $wordScroll
             $feedback.Text = ''
         })
+        $answer.Add_SelectionChanged({ Show-CaretWord $answer $wordPanel $wordScroll })
         $dialog.FindName('CheckButton').Add_Click({
             if (-not $answer.Text.Trim()) { $feedback.Text = 'Type the verse before checking.'; return }
             if ((Test-VerseMatch $answer.Text $verse.text)) {
                 $dialog.DialogResult = $true
             } else {
-                $feedback.Text = 'Not quite. Review the coral words, then try again. Hint gives the next starting letter.'
+                $feedback.Text = 'Not quite. Review the coral words, then try again. Hint shows the next word one letter at a time.'
             }
         })
         $answer.Focus() | Out-Null
@@ -587,6 +727,7 @@ function Show-Practice($verse, [bool]$scheduled = $false) {
     }
 }
 
+# Returns today's verse of the day if the user has already saved it as a memory verse.
 function Get-TodaysPracticeVerse {
     Ensure-DailyVerse
     $dailyVerse = (Get-DailyVerse)
@@ -596,6 +737,7 @@ function Get-TodaysPracticeVerse {
     return $null
 }
 
+# True if the daily verse was already practised successfully today (no more invitations).
 function Test-DailyCompletedToday($verse, [datetime]$now) {
     if ($null -eq $verse) { return $false }
     foreach ($stamp in @($verse.memorizedAt, $verse.lastReviewedAt)) {
@@ -605,6 +747,7 @@ function Test-DailyCompletedToday($verse, [datetime]$now) {
     return $false
 }
 
+# When no verse is in focus: invites the user to read today's verse and then practise it.
 function Show-DailyInvitation {
     $todayVerse = (Get-DailyVerse)
     $dialog = Load-Xaml (Join-Path $PSScriptRoot 'DailyInviteWindow.xaml')
@@ -630,10 +773,12 @@ function Show-DailyInvitation {
     }
 }
 
+# Path of the shortcut in the Windows Startup folder (used by 'Start with Windows').
 function Get-StartupShortcutPath {
     return (Join-Path ([Environment]::GetFolderPath('Startup')) 'Selah Scripture.lnk')
 }
 
+# Creates or refreshes a .lnk shortcut that starts Selah without a console window.
 function Save-SelahShortcut([string]$path, [string]$description) {
     # conhost --headless runs PowerShell with no console window at all, so Windows Terminal never opens.
     $shell = New-Object -ComObject WScript.Shell
@@ -648,8 +793,10 @@ function Save-SelahShortcut([string]$path, [string]$description) {
     $shortcut.Save()
 }
 
+# Path of the optional desktop shortcut.
 function Get-DesktopShortcutPath { return (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Selah.lnk') }
 
+# Keeps the folder, Start menu, Startup and desktop shortcuts pointing at the launcher.
 function Update-Shortcuts {
     # Keep the folder, Start menu, and sign-in shortcuts pointing at the windowless launcher.
     try {
@@ -660,10 +807,12 @@ function Update-Shortcuts {
     } catch { }
 }
 
+# True when Selah is set to start at Windows sign-in.
 function Get-StartupEnabled {
     return [System.IO.File]::Exists((Get-StartupShortcutPath))
 }
 
+# Turns 'Start with Windows' on or off by adding or removing the Startup shortcut.
 function Set-StartupEnabled([bool]$enabled) {
     $path = Get-StartupShortcutPath
     if ($enabled) {
@@ -673,6 +822,7 @@ function Set-StartupEnabled([bool]$enabled) {
     }
 }
 
+# Refreshes the Settings page toggles and segment buttons from the current settings.
 function Update-SettingsView {
     if (-not $script:ui.ContainsKey('StartupToggleButton')) { return }
     $script:ui.StartupToggleButton.IsChecked = [bool](Get-StartupEnabled)
@@ -686,16 +836,20 @@ function Update-SettingsView {
     $script:ui.DesktopShortcutButton.IsEnabled = -not $hasDesktop
 }
 
+# Shows one page of the main window (Home, Week, Bible, ...) and highlights its sidebar button.
+# Some pages refresh their content when opened.
 function Show-Page([string]$page) {
-    foreach ($name in @('Home','Bible','Highlights','Library','Journal','Torah','Bsf','Settings')) {
+    foreach ($name in @('Home','Week','Bible','Highlights','Library','Journal','Torah','Settings')) {
         $script:ui["${name}Page"].Visibility = if ($name -eq $page) { 'Visible' } else { 'Collapsed' }
         $script:ui["${name}Nav"].Tag = if ($name -eq $page) { 'Selected' } else { $null }
     }
     if ($page -eq 'Journal') { Open-JournalDate (Get-Date).ToString('yyyy-MM-dd') }
-    if ($page -eq 'Bsf') { Update-BsfForDate }
     if ($page -eq 'Highlights') { Update-HighlightsPage }
+    if ($page -eq 'Week') { $script:weekStart = ''; $script:weekDay = ''; Update-WeekPage }
 }
 
+# Refreshes the Home page: date, greeting, verse of the day, current focus and progress,
+# then the verse library, reflections list, reading links, Torah card and settings.
 function Update-View {
     Ensure-DailyVerse
     $now = Get-Date
@@ -738,10 +892,10 @@ function Update-View {
     Refresh-ReadingLinks
     Update-TorahView
     Update-SettingsView
-    Update-BsfHomeTile
     if ($script:practiceOpen) { Hide-PracticeSources }
 }
 
+# Rebuilds the 'My verses' list (memorized, focus and active markers) and keeps the selection.
 function Update-Library {
     $selectedId = if ($script:ui.VerseList.SelectedItem) { [string]$script:ui.VerseList.SelectedItem.Tag } else { '' }
     $script:ui.VerseList.Items.Clear()
@@ -759,6 +913,7 @@ function Update-Library {
     Update-SelectedVerse
 }
 
+# Shows the verse selected in 'My verses' with its progress and the buttons that apply to it.
 function Update-SelectedVerse {
     $selected = $script:ui.VerseList.SelectedItem
     $v = if ($null -ne $selected) { Get-Verse ([string]$selected.Tag) } else { $null }
@@ -782,6 +937,7 @@ function Update-SelectedVerse {
     $script:ui.EditSelectedButton.IsEnabled = $true
 }
 
+# Opens the Reflections editor on a given date (yyyy-MM-dd) and loads that day's text.
 function Open-JournalDate([string]$date) {
     $script:openingJournalDate = $true
     try {
@@ -796,6 +952,7 @@ function Open-JournalDate([string]$date) {
     Update-ReflectionList
 }
 
+# Rebuilds the list of past reflections, newest first.
 function Update-ReflectionList {
     $script:updatingReflectionList = $true
     try {
@@ -816,6 +973,8 @@ function Update-ReflectionList {
     }
 }
 
+# Saves the Reflections editor text for the open date (an empty text removes the entry).
+# Called on every keystroke, so nothing is ever lost.
 function Save-Reflection {
     $text = [string]$script:ui.JournalEditor.Text
     $hasContent = -not [string]::IsNullOrWhiteSpace($text)
@@ -838,6 +997,7 @@ function Save-Reflection {
     $script:ui.JournalSavedLabel.Text = if ($hasContent) { 'Saved automatically ✓' } else { 'Empty entry removed' }
 }
 
+# Today's reading plan: Proverbs <day of month>, then Psalms day, day+30, day+60 ... up to 150.
 function Get-TodayReadings([datetime]$date) {
     $day = $date.Day
     [pscustomobject]@{ book = 'Proverbs'; chapter = $day; label = "Proverbs $day" }
@@ -846,6 +1006,7 @@ function Get-TodayReadings([datetime]$date) {
     }
 }
 
+# Returns one chapter (its verses) of a book in the current translation, or $null.
 function Get-BibleChapter([string]$book, [int]$chapter) {
     $data = Get-BibleBookData $book
     if ($null -eq $data) { return $null }
@@ -854,6 +1015,7 @@ function Get-BibleChapter([string]$book, [int]$chapter) {
     return $chapters[$chapter - 1]
 }
 
+# Jumps to the chapter number typed in the Bible page's chapter box (or restores the box).
 function Apply-ChapterInput {
     $number = 0
     if ([int]::TryParse($script:ui.ChapterNumberInput.Text, [ref]$number) -and (Get-BibleChapter $script:bibleBook $number)) {
@@ -861,11 +1023,13 @@ function Apply-ChapterInput {
     } else { $script:ui.ChapterNumberInput.Text = [string]$script:bibleChapter }
 }
 
+# Finds the note saved for a verse key 'Book|chapter|verse', or $null.
 function Get-BibleNote([string]$key) {
     foreach ($note in $script:bibleNotes) { if ($note.key -eq $key) { return $note } }
     return $null
 }
 
+# Makes one reading-plan button: a small chip on Home, or a wide row on the Bible page.
 function New-ReadingButton($reading, [bool]$wide) {
     $button = [System.Windows.Controls.Button]::new()
     $button.Content = $reading.label
@@ -891,6 +1055,7 @@ function New-ReadingButton($reading, [bool]$wide) {
     return $button
 }
 
+# Rebuilds today's reading buttons on the Home and Bible pages.
 function Refresh-ReadingLinks {
     $script:ui.TodayReadingsPanel.Children.Clear()
     $script:ui.BibleTodayPanel.Children.Clear()
@@ -900,6 +1065,8 @@ function Refresh-ReadingLinks {
     }
 }
 
+# Opens a chapter on the Bible page: title, NIV link, one clickable row per verse (with its
+# highlight colour and note marker), and syncs the book list on the left.
 function Set-BibleChapter([string]$book, [int]$chapter) {
     $data = Get-BibleChapter $book $chapter
     if ($null -eq $data) { return }
@@ -940,8 +1107,9 @@ function Set-BibleChapter([string]$book, [int]$chapter) {
         $textLabel = [System.Windows.Controls.TextBlock]::new()
         $textLabel.Text = [string]$verse.text
         $textLabel.TextWrapping = 'Wrap'
-        $textLabel.FontSize = 16
-        $textLabel.LineHeight = 25
+        $textLabel.FontFamily = $script:app.FindResource('ReadingFont')
+        $textLabel.FontSize = 17
+        $textLabel.LineHeight = 28
         $textLabel.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'Text')
         if (Get-BibleNote $key) { $numberLabel.Text = [string]$verse.verse + ' •' }
         [System.Windows.Controls.Grid]::SetColumn($textLabel,1)
@@ -957,6 +1125,7 @@ function Set-BibleChapter([string]$book, [int]$chapter) {
     $script:ui.BibleVerseScroll.ScrollToTop()
 }
 
+# Selects a verse on the Bible page: shows its note, highlight swatches and Memorize button.
 function Open-BibleVerse([string]$key) {
     $parts = $key -split '\|'
     if ($parts.Count -ne 3) { return }
@@ -980,6 +1149,7 @@ function Open-BibleVerse([string]$key) {
     }
 }
 
+# Saves (or clears) the note for the selected verse.
 function Save-BibleNote {
     if (-not $script:bibleVerseKey) { return }
     $text = $script:ui.BibleNoteEditor.Text.Trim()
@@ -994,6 +1164,7 @@ function Save-BibleNote {
     $script:ui.BibleNoteSavedLabel.Text = if ($text) { 'Saved ✓' } else { 'Note removed' }
 }
 
+# Adds the selected Bible verse to My verses as the new focus.
 function Memorize-BibleVerse {
     if (-not $script:bibleVerseKey) { return }
     $parts = $script:bibleVerseKey -split '\|'
@@ -1005,6 +1176,7 @@ function Memorize-BibleVerse {
     Show-Page 'Library'
 }
 
+# Switches between BSB and KJV and refreshes every page that shows Scripture.
 function Set-Translation([string]$code) {
     if ($code -ne 'KJV') { $code = 'BSB' }
     if ($code -eq $script:translation) { Update-SettingsView; return }
@@ -1014,8 +1186,12 @@ function Set-Translation([string]$code) {
     Set-BibleChapter $script:bibleBook $script:bibleChapter
 }
 
+# The four daily practice moments (local time).
 function Get-ReminderTimes { return @('10:00','12:30','14:00','16:30') }
 
+# Runs every 30 seconds. Between 10:00 and 17:00 it opens practice (or the daily invitation)
+# when a reminder time has passed and was not delivered yet. After a long gap it offers one
+# prompt, not a pile of missed ones. A tray balloon appears if the window is hidden.
 function Check-Reminder {
     if ($script:practiceOpen) { return }
     $now = Get-Date
@@ -1052,24 +1228,38 @@ function Check-Reminder {
     if ($null -ne $focus) { Show-Practice $focus $true } else { Show-DailyInvitation }
 }
 
+# ------------------------------------------------------------------ Feature files
+# Dot-sourcing runs these files in this script's scope, so they share $script: variables.
 . (Join-Path $PSScriptRoot 'StudyFeatures.ps1')
 . (Join-Path $PSScriptRoot 'BibleFeatures.ps1')
+. (Join-Path $PSScriptRoot 'WeekFeatures.ps1')
 
 # Theme dictionary and colours live in Application.Resources so every window shares them.
-$themeReader = [System.Xml.XmlReader]::Create((Join-Path $PSScriptRoot 'Theme.xaml'))
-try { $script:app.Resources.MergedDictionaries.Add([System.Windows.Markup.XamlReader]::Load($themeReader)) }
-finally { $themeReader.Dispose() }
+# The base URI lets Theme.xaml find the bundled fonts in .\Fonts (Inter and Source Serif 4, SIL OFL).
+$themeStream = [System.IO.File]::OpenRead((Join-Path $PSScriptRoot 'Theme.xaml'))
+try {
+    $themeContext = [System.Windows.Markup.ParserContext]::new()
+    $themeContext.BaseUri = [uri]::new((Join-Path $PSScriptRoot 'Theme.xaml'))
+    $script:app.Resources.MergedDictionaries.Add([System.Windows.Markup.XamlReader]::Load($themeStream, $themeContext))
+}
+finally { $themeStream.Dispose() }
+# App icon for windows and the tray.
 $script:appIcon = $null
 $script:iconPath = Join-Path $PSScriptRoot 'selah.ico'
 if ([System.IO.File]::Exists($script:iconPath)) {
     try { $script:appIcon = [System.Windows.Media.Imaging.BitmapFrame]::Create([uri]::new($script:iconPath)) } catch { }
 }
 
+# ------------------------------------------------------------------ Start up
+# Load saved data, apply the theme and make sure today's verse is chosen before any window opens.
 Load-State
 Set-Theme $script:theme
 Ensure-DailyVerse
+# ------------------------------------------------------------------ Main window
+# Load the main window and look up every named control once. A missing name stops startup
+# with a clear message, which catches XAML and code getting out of step.
 $script:window = Load-Xaml (Join-Path $PSScriptRoot 'MainWindow.xaml')
-foreach ($name in @('HomeNav','BibleNav','LibraryNav','JournalNav','TorahNav','BsfNav','SettingsNav','HomePage','BiblePage','LibraryPage','JournalPage','TorahPage','BsfPage','SettingsPage','DateLabel','HebrewDateLabel','StatusLabel','GreetingLabel',
+foreach ($name in @('WeekNav','WeekPage','WeekContent','HomeNav','BibleNav','LibraryNav','JournalNav','TorahNav','SettingsNav','HomePage','BiblePage','LibraryPage','JournalPage','TorahPage','SettingsPage','DateLabel','HebrewDateLabel','StatusLabel','GreetingLabel',
     'DailyText','DailyReference','DailyVersionLabel','NewDailyButton','DailyNivButton','PracticeButton','AddVerseButton','AddDailyButton','FocusTitle','FocusReference','FocusHint',
     'FocusProgress','MasteredCount','ViewLibraryButton','WriteReflectionButton','LibraryAddButton','VerseList',
     'SelectedState','SelectedReference','SelectedText','SelectedProgress','FocusSelectedButton','PracticeSelectedButton','EditSelectedButton',
@@ -1083,9 +1273,7 @@ foreach ($name in @('HomeNav','BibleNav','LibraryNav','JournalNav','TorahNav','B
     'ThemeQuickButton','ThemeQuickIcon','PassageSearchBox','PassageSearchHint','PassageSearchButton',
     'TorahHomeName','TorahHomeReading','TorahHomeDate','TorahHomeOpenButton','TorahCurrentName','TorahCurrentDate',
     'TorahCurrentKindLabel','TorahCurrentTorah','TorahCurrentHaftarah','TorahCurrentGospel','ReadTorahButton','ReadHaftarahButton',
-    'ReadGospelButton','TorahUpcomingPanel','BsfHomeOpenButton','BsfHomeLesson','BsfHomeMeta','BsfLessonHeading','BsfLessonMeta','BsfLessonMetaPanel','BsfPreviousButton',
-    'BsfCurrentButton','BsfNextButton','BsfQuestionsTab','BsfNotesTab','BsfSavedLabel','BsfExportButton',
-    'BsfQuestionsView','BsfQuestionPanel','BsfNotesView','BsfNotesHeading','BsfNotesBody')) {
+    'ReadGospelButton','TorahUpcomingPanel')) {
     $script:ui[$name] = $script:window.FindName($name)
     if ($null -eq $script:ui[$name]) { throw "MainWindow.xaml is missing the element '$name'." }
 }
@@ -1093,6 +1281,8 @@ foreach ($name in @('HomeNav','BibleNav','LibraryNav','JournalNav','TorahNav','B
 # Bible book list (all 66 books; click a book to show its chapters)
 Initialize-BookList
 
+# ------------------------------------------------------------------ Tray icon
+# Closing the window hides it; Selah keeps running in the tray so reminders still work.
 $script:tray = [System.Windows.Forms.NotifyIcon]::new()
 $script:tray.Icon = if ([System.IO.File]::Exists($script:iconPath)) { try { [System.Drawing.Icon]::new($script:iconPath) } catch { [System.Drawing.SystemIcons]::Information } } else { [System.Drawing.SystemIcons]::Information }
 $script:tray.Text = 'Selah — Scripture, remembered'
@@ -1125,6 +1315,8 @@ $script:window.Add_Closing({
     }
 })
 
+# Adapts the main window to its width: a narrow window gets icon-only navigation,
+# a smaller search box and fewer tile columns.
 function Update-Layout {
     # Narrow windows (split view): icon-only navigation, smaller search box, two-column tiles.
     $width = $script:window.ActualWidth
@@ -1140,10 +1332,12 @@ function Update-Layout {
     }
     $script:ui.MainArea.Margin = if ($compact) { [System.Windows.Thickness]::new(16,16,16,12) } else { [System.Windows.Thickness]::new(26,20,26,16) }
     $script:ui.SearchBorder.Width = if ($width -lt 820) { 190 } else { 300 }
-    $script:ui.ExploreGrid.Columns = if ($width -lt 900) { 2 } else { 3 }
+    $script:ui.ExploreGrid.Columns = if ($width -lt 760) { 1 } else { 2 }
     $script:ui.BibleSideColumn.Width = [System.Windows.GridLength]::new($(if ($width -lt 900) { 190 } else { 250 }))
 }
 
+# The search box at the top: opens any typed reference (e.g. 'John 3:16; Psalm 23'),
+# or a whole book when only a book name is typed.
 function Open-PassageSearch {
     $query = $script:ui.PassageSearchBox.Text.Trim()
     if (-not $query) { return }
@@ -1158,23 +1352,18 @@ function Open-PassageSearch {
     }
 }
 
+# ------------------------------------------------------------------ Buttons and events
+# Sidebar navigation, then each page's buttons. Handlers call the functions defined above.
 $script:ui.HomeNav.Add_Click({ Show-Page 'Home' })
+$script:ui.WeekNav.Add_Click({ Show-Page 'Week' })
 $script:ui.BibleNav.Add_Click({ Show-Page 'Bible' })
 $script:ui.LibraryNav.Add_Click({ Show-Page 'Library' })
 $script:ui.JournalNav.Add_Click({ Show-Page 'Journal' })
 $script:ui.TorahNav.Add_Click({ Show-Page 'Torah' })
-$script:ui.BsfNav.Add_Click({ Show-Page 'Bsf' })
 $script:ui.TorahHomeOpenButton.Add_Click({ Show-Page 'Torah' })
-$script:ui.BsfHomeOpenButton.Add_Click({ Show-Page 'Bsf' })
 $script:ui.ReadTorahButton.Add_Click({ if ($script:torahCurrent) { Show-Scripture ([string]$script:torahCurrent.torah) } })
 $script:ui.ReadHaftarahButton.Add_Click({ if ($script:torahCurrent) { Show-Scripture ([string]$script:torahCurrent.haftarah) } })
 $script:ui.ReadGospelButton.Add_Click({ if ($script:torahCurrent) { Show-Scripture ([string]$script:torahCurrent.gospel) } })
-$script:ui.BsfPreviousButton.Add_Click({ Select-BsfLesson ($script:bsfLessonNumber - 1) })
-$script:ui.BsfNextButton.Add_Click({ Select-BsfLesson ($script:bsfLessonNumber + 1) })
-$script:ui.BsfCurrentButton.Add_Click({ Select-BsfLesson (Get-BsfLessonForDate (Get-Date)) $true })
-$script:ui.BsfQuestionsTab.Add_Click({ Set-BsfTab 'Questions' })
-$script:ui.BsfNotesTab.Add_Click({ Set-BsfTab 'Notes' })
-$script:ui.BsfExportButton.Add_Click({ Export-BsfAnswers })
 $script:ui.SettingsNav.Add_Click({ Show-Page 'Settings' })
 $script:ui.StartupToggleButton.Add_Click({
     try { Set-StartupEnabled (-not (Get-StartupEnabled)) }
@@ -1254,6 +1443,8 @@ $script:ui.ChapterNumberInput.Add_LostFocus({ Apply-ChapterInput })
 $script:ui.SaveBibleNoteButton.Add_Click({ Save-BibleNote })
 $script:ui.MemorizeBibleVerseButton.Add_Click({ Memorize-BibleVerse })
 
+# ------------------------------------------------------------------ Timer
+# Every 30 seconds: roll over to a new day after midnight, then check practice reminders.
 $script:timer = [System.Windows.Threading.DispatcherTimer]::new()
 $script:timer.Interval = [timespan]::FromSeconds(30)
 $script:timer.Add_Tick({
@@ -1261,13 +1452,12 @@ $script:timer.Add_Tick({
         Ensure-DailyVerse
         Update-View
         Open-JournalDate (Get-Date).ToString('yyyy-MM-dd')
-        Update-BsfForDate
     }
     Check-Reminder
 })
 $script:timer.Start()
+# First paint: Home page, today's Proverbs chapter on the Bible page, and the layout for this width.
 Update-View
-Select-BsfLesson (Get-BsfLessonForDate (Get-Date)) $true
 Set-BibleChapter 'Proverbs' (Get-Date).Day
 Show-Page 'Home'
 $script:window.Add_ContentRendered({ Check-Reminder })
@@ -1279,8 +1469,7 @@ if ($TestMode) {
     # Used by the local smoke test to verify XAML and initialization without opening the UI.
     if ($SnapshotPath) {
         if ($SnapshotTheme) { Set-Theme $SnapshotTheme }
-        if ($SnapshotPage -eq 'BsfNotes') { Show-Page 'Bsf'; Set-BsfTab 'Notes' }
-        else { Show-Page $SnapshotPage }
+        Show-Page $SnapshotPage
         $script:window.Show()
         $script:window.Measure([System.Windows.Size]::new(1180,800))
         $script:window.Arrange([System.Windows.Rect]::new(0,0,1180,800))

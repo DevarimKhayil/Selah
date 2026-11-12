@@ -1,4 +1,12 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿# =====================================================================================
+# Test-Selah.ps1 - desktop smoke test (Windows PowerShell 5.1, run with -STA).
+# Starts Selah in -TestMode with a throwaway data folder, then checks: file encodings, data
+# loading, Hebrew dates and the Torah card, reference detection and passages, daily verses,
+# practice (answer checking, hints, peek, live word check), dialogs, themes and fonts, the
+# Week page, Bible browsing and highlights, notes, reflections and that state.json is saved.
+# Any failure throws with a plain message. RunCheck.cmd runs this and saves preview images.
+# =====================================================================================
+$ErrorActionPreference = 'Stop'
 $testRoot = Join-Path $PSScriptRoot ('.selah-test-' + [guid]::NewGuid().ToString('N'))
 $env:SELAH_DATA_DIR = $testRoot
 
@@ -16,7 +24,7 @@ try {
     if ((Get-DailyVerse 0).text -notmatch 'In the beginning') { throw 'Daily verse text lookup failed.' }
     $psalm23 = @(0..($script:dailyVerses.Count - 1) | Where-Object { $script:dailyVerses[$_].reference -eq 'Psalm 23:1' })[0]
     if ((Get-DailyVerse $psalm23).text -notmatch '^The LORD is my shepherd') { throw 'Psalm heading was not trimmed from the daily verse.' }
-    if ($script:allBibleBookNames.Count -ne 66 -or $script:bsfLessons.Count -ne 30 -or $script:torahPortions.Count -ne 51 -or $script:torahSpecialReadings.Count -ne 12) { throw 'Study data did not load.' }
+    if ($script:allBibleBookNames.Count -ne 66 -or $script:torahPortions.Count -ne 51 -or $script:torahSpecialReadings.Count -ne 12) { throw 'Study data did not load.' }
     if ((Get-HebrewDate ([datetime]'2026-10-16')) -ne '5 Cheshvan 5787' -or
         (Get-HebrewDate ([datetime]'2027-02-10')) -ne '3 Adar I 5787' -or
         (Get-HebrewDate ([datetime]'2027-04-22')) -ne '15 Nisan 5787' -or
@@ -26,9 +34,6 @@ try {
     if ((Get-TorahPortion ([datetime]'2027-08-07')).name -ne 'Devarim') { throw 'Later Torah selection failed.' }
     if ((Get-TorahReading ([datetime]'2027-04-22')).name -ne 'Pesach I' -or (Get-TorahReading ([datetime]'2027-06-12')).name -ne 'Shavuot II') { throw 'Special Torah reading selection failed.' }
     if ($null -ne (Get-TorahReading ([datetime]'2027-10-25'))) { throw 'Completed Torah card should not invent another reading.' }
-    if ((Get-BsfLessonForDate ([datetime]'2026-10-14')) -ne 5 -or (Get-BsfLessonForDate ([datetime]'2026-10-21')) -ne 6 -or
-        (Get-BsfLessonForDate ([datetime]'2026-10-20')) -ne 5 -or (Get-BsfLessonForDate ([datetime]'2026-10-13')) -ne 4 -or
-        (Get-BsfWeekStart 7).DayOfWeek -ne 'Wednesday') { throw 'Wednesday BSF lesson schedule failed.' }
     $found = Find-ScriptureReferences "See also John 1:12; 3:14-18;`n20:30-31; Ephesians 2:8-9; Hebrews 11; or other verses. From verse 27, what?" 'Romans' 3
     $refs = @($found.links | ForEach-Object { $_.reference }) -join '|'
     if ($refs -ne 'John 1:12|John 3:14-18|John 20:30-31|Ephesians 2:8-9|Hebrews 11|Hebrews 11:27') { throw "Reference detection failed: $refs" }
@@ -45,57 +50,13 @@ try {
         (Get-ScriptureText '1 Samuel 20:18–42') -notmatch '20:42') { throw 'Offline passage lookup failed.' }
     $multiPassage = Get-ScriptureText 'Joshua 3:5–7, 5:2–6:1, 6:27'
     if ($multiPassage -notmatch '3:5' -or $multiPassage -notmatch '5:2' -or $multiPassage -notmatch '6:27') { throw 'Multi-part KJV passage lookup failed.' }
-    $questionWithIntroduction = @($script:bsfLessons[28].questions | Where-Object { $_.number -eq 6 })[0]
-    $introducedParts = @(Get-BsfQuestionParts ([string]$questionWithIntroduction.text))
-    if ($introducedParts.Count -ne 3 -or $introducedParts[0].introduction -notmatch 'Review Romans' -or
-        ($introducedParts | ForEach-Object { $_.label }) -join ',' -ne 'a,b,c') { throw 'Lettered question introduction was not split correctly.' }
-    $script:bsfAnswers.Add([pscustomobject]@{ lesson = 5; number = 9; text = 'Earlier combined answer'; updatedAt = (Get-Date).ToString('o') })
-    Save-State
-    Select-BsfLesson 5 $true
-    if ($script:ui.BsfLessonHeading.Text -notmatch 'Lesson 5' -or $script:ui.BsfNotesHeading.Text -notmatch 'LESSON 4 NOTES' -or
-        $script:bsfNotesText -notmatch 'Inadequate Defense' -or $null -eq $script:ui.BsfNotesBody.Document) { throw 'Romans lesson and previous notes view failed.' }
-    $noteLinks = @($script:ui.BsfNotesBody.Document.Blocks | ForEach-Object { $_.Inlines } | Where-Object { $_ -is [System.Windows.Documents.Hyperlink] })
-    if ($noteLinks.Count -lt 5) { throw 'Scripture references in the notes are not clickable.' }
-    function Get-CardTextBoxes($card) {
-        foreach ($child in $card.Child.Children) {
-            if ($child -is [System.Windows.Controls.TextBox]) { $child }
-            elseif ($child -is [System.Windows.Controls.Border] -and $child.Child -is [System.Windows.Controls.TextBox]) { $child.Child }
-        }
-    }
-    $questionCards = @($script:ui.BsfQuestionPanel.Children | Where-Object { $_ -is [System.Windows.Controls.Border] })
-    $promptLinks = @($script:ui.BsfQuestionPanel.Children | Where-Object { $_ -is [System.Windows.Controls.TextBlock] } | ForEach-Object { $_.Inlines } | Where-Object { $_ -is [System.Windows.Documents.Hyperlink] })
-    if ($promptLinks.Count -lt 1) { throw 'Day instructions do not link their Scripture.' }
-    if ($questionCards.Count -ne 20) { throw 'Lettered Romans questions were not given separate cards.' }
-    $question9a = @($questionCards | Where-Object { $_.Child.Children | Where-Object { $_ -is [System.Windows.Controls.TextBlock] -and $_.Text -like '9a.*' } })[0]
-    $question9b = @($questionCards | Where-Object { $_.Child.Children | Where-Object { $_ -is [System.Windows.Controls.TextBlock] -and $_.Text -like '9b.*' } })[0]
-    if ($null -eq $question9a -or $null -eq $question9b -or $null -eq (Get-BsfAnswer 5 9)) { throw 'Question 9 parts or earlier answer are missing.' }
-    if (@(Get-CardTextBoxes $question9a | Where-Object { $_.IsReadOnly -and $_.Text -eq 'Earlier combined answer' }).Count -ne 1) { throw 'Earlier combined answer is not visible beside the new fields.' }
-    $answer9a = @(Get-CardTextBoxes $question9a | Where-Object { -not $_.IsReadOnly -and $_.Tag.part -eq 'a' })[0]
-    $answer9b = @(Get-CardTextBoxes $question9b | Where-Object { -not $_.IsReadOnly -and $_.Tag.part -eq 'b' })[0]
-    $answer9a.Text = 'Answer for part a'
-    $answer9b.Text = 'Answer for part b'
-    if ((Get-BsfAnswer 5 9 'a').text -ne 'Answer for part a' -or (Get-BsfAnswer 5 9 'b').text -ne 'Answer for part b') { throw 'Separate Romans answers did not autosave.' }
-    $firstAnswerBox = @(Get-CardTextBoxes $questionCards[0])[0]
-    $firstAnswerBox.Text = 'Grace & truth <saved>'
-    if ((Get-BsfAnswer 5 1).text -ne 'Grace & truth <saved>') { throw 'Romans answer did not autosave.' }
-    Select-BsfLesson 6
-    Select-BsfLesson 5
-    $restoredCards = @($script:ui.BsfQuestionPanel.Children | Where-Object { $_ -is [System.Windows.Controls.Border] })
-    $restoredAnswerBox = @(Get-CardTextBoxes $restoredCards[0])[0]
-    if ($restoredAnswerBox.Text -ne 'Grace & truth <saved>') { throw 'Romans answer was lost when switching lessons.' }
-    $restored9b = @($restoredCards | ForEach-Object { Get-CardTextBoxes $_ } | Where-Object { -not $_.IsReadOnly -and $_.Tag.part -eq 'b' -and $_.Tag.number -eq 9 })[0]
-    if ($restored9b.Text -ne 'Answer for part b') { throw 'Lettered answer was lost when switching lessons.' }
-    $exportHtml = Get-BsfExportHtml 5
-    if ($exportHtml -notmatch 'Grace &amp; truth &lt;saved&gt;' -or $exportHtml -notmatch '9a\.' -or
-        $exportHtml -notmatch '9b\.' -or $exportHtml -notmatch 'Earlier combined answer' -or
-        $exportHtml -notmatch 'Answer for part a' -or $exportHtml -notmatch 'Answer for part b') { throw 'Romans printable export failed.' }
     if ((Normalize-Verse '  Be still, LORD! ') -ne (Normalize-Verse 'be still lord')) { throw 'Answer comparison failed.' }
     if (-not (Test-VerseMatch 'is to come the Almighty' 'is to come—the Almighty') -or -not (Test-VerseMatch 'is to come-the Almighty' 'is to come—the Almighty') -or
         (Test-VerseMatch 'is to come Almighty' 'is to come—the Almighty')) { throw 'Dashed words should be typed as separate words.' }
     $practiceUi = Load-Xaml (Join-Path $PSScriptRoot 'PracticeWindow.xaml')
     if ($null -eq $practiceUi.FindName('AnswerInput').CaretBrush) { throw 'Practice caret brush is missing.' }
     if ($null -eq $practiceUi.FindName('HintButton')) { throw 'Hint control is missing.' }
-    foreach ($needed in @('PeekButton','PeekPanel','PeekText','PeekCaption','SourceLabel','SourceIcon','SourceBadge')) {
+    foreach ($needed in @('PeekButton','PeekPanel','PeekText','PeekCaption','SourceLabel','SourceIcon','SourceBadge','WordFeedbackScroll','PeekScroll')) {
         if ($null -eq $practiceUi.FindName($needed)) { throw "PracticeWindow.xaml is missing '$needed'." }
     }
     $inviteUi = Load-Xaml (Join-Path $PSScriptRoot 'DailyInviteWindow.xaml')
@@ -104,16 +65,45 @@ try {
     if (-not $script:offerDailyWhenNoFocus) { throw 'Daily fallback should default to on.' }
     Update-WordFeedback 'The wrong shep' 'The LORD is my shepherd;' ($practiceUi.FindName('WordFeedbackPanel'))
     if ($practiceUi.FindName('WordFeedbackPanel').Children.Count -ne 3) { throw 'Colored word preview failed.' }
+    $peekProbe = [System.Windows.Controls.TextBox]::new(); $peekProbe.Text = 'The LORD is'
+    Show-PeekAt $peekProbe 'The LORD is my shepherd; I shall not want.' ($practiceUi.FindName('PeekText')) ($practiceUi.FindName('PeekScroll'))
+    $peekRuns = @($practiceUi.FindName('PeekText').Inlines)
+    if ($peekRuns.Count -ne 3 -or $peekRuns[1].Text -ne 'my') { throw 'Peek should mark the next word to type.' }
     $addUi = Load-Xaml (Join-Path $PSScriptRoot 'AddVerseWindow.xaml')
     if ($null -eq $addUi.FindName('FillVerseButton') -or $null -eq $addUi.FindName('DialogTitle') -or $null -eq $addUi.FindName('DialogCaption')) { throw 'Add verse dialog is out of date.' }
     Set-Theme 'Dark'
     $darkCaret = $script:ui.JournalEditor.CaretBrush.Color.ToString()
     Set-Theme 'Light'
     if ($darkCaret -eq $script:ui.JournalEditor.CaretBrush.Color.ToString()) { throw 'Theme switch did not update the caret colour.' }
+    $script:weeks = @{}; $script:habits.Clear()
+    Show-Page 'Week'
+    if ($script:ui.WeekPage.Visibility -ne 'Visible' -or $script:ui.WeekContent.Children.Count -lt 2) { throw 'Week page did not open.' }
+    Add-WeekItem 'goal' 'Test goal'
+    Add-WeekItem 'task' 'Test task'
+    $testWeek = Get-WeekData $script:weekStart $false
+    if ($testWeek.goals.Count -ne 1 -or (Get-WeekDay $testWeek $script:weekDay).tasks.Count -ne 1) { throw 'Week goals or tasks were not added.' }
+    Set-WeekTaskRepeat (Get-WeekDay $testWeek $script:weekDay).tasks[0] 'daily'
+    if ($script:habits.Count -ne 1) { throw 'Repeating task was not saved as a habit.' }
+    if ((Get-WeekNumber ([datetime]'2026-11-12')) -ne 46 -or (Get-WeekNumber ([datetime]'2026-01-01')) -ne 1) { throw 'Week number is wrong.' }
+    $roundTrip = (ConvertTo-Json -InputObject ([pscustomobject]@{ weeks = $script:weeks; habits = @($script:habits.ToArray()) }) -Depth 12) | ConvertFrom-Json
+    Read-WeekData $roundTrip
+    if ((Get-WeekData $script:weekStart $false).goals[0].text -ne 'Test goal' -or $script:habits.Count -ne 1) { throw 'Week data did not survive saving.' }
+    $script:weeks = @{}; $script:habits.Clear()
+    Show-Page 'Home'
     if ($script:ui.HomeNav.Tag -ne 'Selected') { throw 'Navigation selection is not shown.' }
     $live = @(Get-LiveWords 'The wrong shep' 'The LORD is my shepherd;')
     if ($live.Count -ne 3 -or $live[0].status -ne 'correct' -or $live[1].status -ne 'wrong' -or $live[2].status -ne 'wrong') { throw 'Live word feedback failed.' }
-    if ((Get-NextHint 'The' 'The LORD is my shepherd;') -notlike 'Hint: word 2 begins with "L".*' -or (Get-NextHint 'The' 'The LORD is my shepherd;' 2) -ne 'Hint: word 2 is "LORD".') { throw 'Hint failed.' }
+    $ell = [string][char]0x2026
+    if ((Get-NextHint 'The' 'The LORD is my shepherd;') -notlike ('Hint: word 2 starts with "L' + $ell + '".*') -or
+        (Get-NextHint 'The' 'The LORD is my shepherd;' 2) -notlike ('Hint: word 2 starts with "LO' + $ell + '".*') -or
+        (Get-NextHint 'The' 'The LORD is my shepherd;' 3) -notlike ('Hint: word 2 starts with "LOR' + $ell + '".*') -or
+        (Get-NextHint 'The' 'The LORD is my shepherd;' 9) -notlike ('Hint: word 2 starts with "LOR' + $ell + '".*') -or
+        (Get-NextHint 'The LORD is' 'The LORD is my shepherd;' 2) -ne 'Hint: word 4 is "my".') { throw 'Hint failed (one letter per press, at most three).' }
+    foreach ($font in @('Inter-400.ttf','Inter-600.ttf','Inter-700.ttf','SourceSerif4-400.ttf','SourceSerif4-600.ttf')) {
+        if (-not [System.IO.File]::Exists((Join-Path $PSScriptRoot "Fonts\$font"))) { throw "Fonts\$font is missing." }
+    }
+    if ([string]$script:app.FindResource('ReadingFont').Source -notlike '*Source Serif 4*') { throw 'Reading font is not set.' }
+    if ($script:palettes.Light.Bg[0] -ne '#F7F7F1' -or $script:palettes.Dark.Bg[0] -ne '#0A0A0A') { throw 'Chalk palette is not in use.' }
 
     $firstDay = @(Get-TodayReadings ([datetime]'2026-10-01'))
     $lastDay = @(Get-TodayReadings ([datetime]'2026-10-31'))
@@ -184,9 +174,7 @@ try {
         @($saved.reflections | Where-Object { $_.date -eq $todayReflectionDate -and $_.text -ceq 'A reflection saved today. ' }).Count -ne 1 -or
         @($saved.reflections | Where-Object { $_.date -eq $previousReflectionDate -and $_.text -eq 'A thought from yesterday.' }).Count -ne 1) { throw 'Reflections did not autosave by date.' }
     if ($saved.bibleNotes.Count -ne 1 -or $saved.bibleNotes[0].key -ne 'Psalms|1|1') { throw 'Bible note was not persisted.' }
-    if ($saved.bsfAnswers.Count -ne 4 -or
-        @($saved.bsfAnswers | Where-Object { $_.lesson -eq 5 -and $_.number -eq 9 -and $_.part -eq 'b' -and $_.text -eq 'Answer for part b' }).Count -ne 1 -or
-        @($saved.bsfAnswers | Where-Object { $_.lesson -eq 5 -and $_.number -eq 1 -and $_.text -eq 'Grace & truth <saved>' }).Count -ne 1) { throw 'Separate Romans answers were not persisted.' }
+    if ($null -ne $saved.bsfAnswers) { throw 'Romans answers should no longer be saved.' }
     $seen = [System.Collections.Generic.HashSet[int]]::new()
     $seen.Add([int]$script:daily.index) | Out-Null
     for ($i = 1; $i -lt $script:dailyVerses.Count; $i++) {
@@ -198,7 +186,7 @@ try {
     Set-Translation 'KJV'
     if ($script:ui.DailyVersionLabel.Text -notmatch 'KJV' -or $script:ui.BibleVersionLabel.Text -ne 'KING JAMES VERSION') { throw 'Translation switch failed.' }
     Set-Translation 'BSB'
-    Write-Output 'PASS: startup, themes, reminders, Hebrew date, Torah schedule, Wednesday Romans lessons, clickable references, answers and export, BSB/KJV passages and NIV links, whole-Bible daily verses, verse practice, Bible notes, reflections'
+    Write-Output 'PASS: startup, themes, reminders, Hebrew date, Torah schedule, Week page, Scripture references, BSB/KJV passages and NIV links, whole-Bible daily verses, verse practice, Bible notes, reflections'
 } finally {
     $expectedPrefix = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\') + '\.selah-test-'
     $resolved = [System.IO.Path]::GetFullPath($testRoot)

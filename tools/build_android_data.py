@@ -4,12 +4,10 @@
 Reads (relative to the repository root):
   BibleData/*.json, BibleData/BSB/*.json   -> mobile/assets/www/bible/{KJV,BSB}/<Book>.js
   daily-verses.json + BSB chapter counts   -> mobile/assets/www/data/pool.js
-  StudyData/romans-lessons.json (optional) -> mobile/assets/www/data/romans.js
   StudyData/torah-*.json (optional)        -> mobile/assets/www/data/torah.js
 
-The Romans lessons and Torah card are personal study material and are NOT in the
-public repository. When they are missing the phone app still builds and shows a
-friendly "not included" message on those pages.
+The Torah card is personal study material and is NOT in the public repository.
+When it is missing the phone app still builds and shows a friendly message.
 """
 import json
 import os
@@ -48,19 +46,9 @@ def main():
           'Selah.data.pool=' + json.dumps(pool, ensure_ascii=False) + ';Selah.data.books=' + json.dumps(books) +
           ';Selah.data.chapters=' + json.dumps(counts) + ';')
 
-    romans = os.path.join(ROOT, 'StudyData', 'romans-lessons.json')
-    out = os.path.join(WWW, 'data', 'romans.js')
-    if os.path.exists(romans):
-        lessons = load(romans)
-        for lesson in lessons:
-            lesson.pop('questionsPdfPage', None)
-            lesson.pop('notesPdfPage', None)
-            for page in lesson.get('notesPages', []):
-                page.pop('pdfPage', None)
-        write(out, 'Selah.data.romans=' + json.dumps(lessons, ensure_ascii=False, separators=(',', ':')) + ';')
-        print('romans.js: %d lessons' % len(lessons))
-    elif os.path.exists(out):
-        os.remove(out)
+    stale = os.path.join(WWW, 'data', 'romans.js')  # Romans study was removed
+    if os.path.exists(stale):
+        os.remove(stale)
 
     portions = os.path.join(ROOT, 'StudyData', 'torah-portions.json')
     special = os.path.join(ROOT, 'StudyData', 'torah-special-readings.json')

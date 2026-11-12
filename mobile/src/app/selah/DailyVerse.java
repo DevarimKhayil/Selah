@@ -20,12 +20,15 @@ final class DailyVerse {
     static final String CHANNEL = "daily_verse";
     final String reference, text, translation;
 
+    /** Holds one verse: its reference, text and translation code. */
     private DailyVerse(String reference, String text, String translation) {
         this.reference = reference; this.text = text; this.translation = translation;
     }
 
+    /** Today's date as yyyy-MM-dd, the key used in the web app's daily plan. */
     static String today() { return new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date()); }
 
+    /** Reads today's verse from the plan the web app saved in SharedPreferences, or null if none. */
     static DailyVerse forToday(Context ctx) {
         SharedPreferences p = ctx.getSharedPreferences("selah", Context.MODE_PRIVATE);
         String tr = p.getString("translation", "Berean Standard Bible");
@@ -40,6 +43,7 @@ final class DailyVerse {
         return null;
     }
 
+    /** Shows the morning 'verse of the day' notification (high importance, so it pops up). */
     static void showNotification(Context ctx) {
         DailyVerse v = forToday(ctx);
         String title = v == null ? "Verse of the day" : v.reference;
@@ -61,7 +65,7 @@ final class DailyVerse {
          .setContentText(body)
          .setSubText("Verse of the day")
          .setStyle(new Notification.BigTextStyle().bigText(body).setSummaryText(v == null ? "Selah" : "Verse of the day"))
-         .setColor(0xFF0F6CBD)
+         .setColor(0xFF6F7780)
          .setPriority(Notification.PRIORITY_HIGH)
          .setDefaults(Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE)
          .setCategory(Notification.CATEGORY_MESSAGE)
@@ -70,9 +74,13 @@ final class DailyVerse {
         nm.notify(2, b.build());
     }
 
+    /** Redraws every Selah widget on the home screen, in all five sizes. */
     static void updateWidgets(Context ctx) {
         AppWidgetManager m = AppWidgetManager.getInstance(ctx);
-        int[] ids = m.getAppWidgetIds(new ComponentName(ctx, VerseWidget.class));
-        if (ids != null && ids.length > 0) VerseWidget.update(ctx, m, ids);
+        Class<?>[] kinds = { VerseWidget.class, VerseWidget2x1.class, VerseWidget3x2.class, VerseWidget4x1.class, VerseWidget4x2.class };
+        for (Class<?> k : kinds) {
+            int[] ids = m.getAppWidgetIds(new ComponentName(ctx, k));
+            if (ids != null && ids.length > 0) VerseWidget.update(ctx, m, ids);
+        }
     }
 }

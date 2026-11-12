@@ -21,6 +21,7 @@ public class ReminderReceiver extends BroadcastReceiver {
     private static final int[][] TIMES = { { 10, 0 }, { 12, 30 }, { 14, 0 }, { 16, 30 } };
     private static final String CHANNEL = "practice";
 
+    /** Runs when an alarm fires (or after reboot/update): shows the right notification and sets the next alarm. */
     @Override
     public void onReceive(Context ctx, Intent intent) {
         if (intent != null && ACTION_REMIND.equals(intent.getAction())) {
@@ -34,6 +35,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         scheduleNext(ctx);
     }
 
+    /** Schedules the next practice reminder and the next morning verse notification with AlarmManager. */
     static void scheduleNext(Context ctx) {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         SharedPreferences prefs = ctx.getSharedPreferences("selah", Context.MODE_PRIVATE);
@@ -63,6 +65,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         if (next != null) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.getTimeInMillis(), pi);
     }
 
+    /** Sets one exact alarm for the next time hour:minute comes round. */
     private static void scheduleDaily(Context ctx, AlarmManager am, String action, int code, int hour, int minute) {
         Intent i = new Intent(ctx, ReminderReceiver.class);
         i.setAction(action);
@@ -76,6 +79,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, c.getTimeInMillis(), pi);
     }
 
+    /** Shows a practice notification that opens Selah straight into practice. */
     static void show(Context ctx, String title, String body) {
         NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
         Notification.Builder b = new Notification.Builder(ctx);
@@ -91,7 +95,7 @@ public class ReminderReceiver extends BroadcastReceiver {
          .setContentTitle(title)
          .setContentText(body)
          .setStyle(new Notification.BigTextStyle().bigText(body))
-         .setColor(0xFF0F6CBD)
+         .setColor(0xFF6F7780)
          .setAutoCancel(true)
          .setContentIntent(MainActivity.openAppIntent(ctx, true));
         nm.notify(1, b.build());

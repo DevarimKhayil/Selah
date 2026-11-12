@@ -1,6 +1,9 @@
+<!-- 'Type it from memory' dialog: the verse reference and wording badge, the answer box with
+     hold-to-peek overlay, the live word check (green/coral), hint text and the buttons.
+     Behaviour is wired in Show-Practice (Selah.ps1). -->
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Time to remember — Selah" Width="700" Height="600" MinWidth="600" MinHeight="510"
+        Title="Time to remember — Selah" Width="720" Height="660" MinWidth="600" MinHeight="540"
         WindowStartupLocation="CenterScreen" Style="{StaticResource DialogWindow}" Topmost="True">
   <Grid Margin="30">
     <Grid.RowDefinitions>
@@ -10,7 +13,7 @@
       <RowDefinition Height="16"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <StackPanel Orientation="Horizontal">
-      <Border Style="{StaticResource IconTile}" Background="{DynamicResource HeroBrush}" VerticalAlignment="Top"><TextBlock Text="&#xE70F;" Style="{StaticResource Icon}" FontSize="17" Foreground="White" HorizontalAlignment="Center"/></Border>
+      <Border Style="{StaticResource IconTile}" Background="{DynamicResource TileBg}" VerticalAlignment="Top"><TextBlock Text="&#xE70F;" Style="{StaticResource Icon}" FontSize="17" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
       <StackPanel Margin="14,0,0,0">
         <TextBlock Text="MOMENT TO REMEMBER" Style="{StaticResource AccentCaption}"/>
         <TextBlock Text="Type it from memory." FontFamily="{StaticResource DisplayFont}" FontSize="26" FontWeight="SemiBold" Margin="0,2,0,0"/>
@@ -36,16 +39,16 @@
     </Border>
     <Border x:Name="PeekPanel" Grid.Row="4" Visibility="Collapsed" CornerRadius="8" Padding="16,12" Background="{DynamicResource HeroBrush}">
       <DockPanel>
-        <TextBlock x:Name="PeekCaption" DockPanel.Dock="Top" Text="PEEK  ·  RELEASE TO HIDE" Foreground="#D9E7FF" FontSize="11" FontWeight="Bold" Margin="0,0,0,8"/>
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <TextBlock x:Name="PeekText" Foreground="White" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="27"/>
+        <TextBlock x:Name="PeekCaption" DockPanel.Dock="Top" Text="PEEK  ·  SCROLL TO MOVE  ·  RELEASE TO HIDE" Foreground="{DynamicResource HeroCaption}" FontSize="11" FontWeight="Bold" Margin="0,0,0,8"/>
+        <ScrollViewer x:Name="PeekScroll" VerticalScrollBarVisibility="Auto">
+          <TextBlock x:Name="PeekText" Foreground="{DynamicResource HeroText}" FontFamily="{StaticResource ReadingFont}" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="29"/>
         </ScrollViewer>
       </DockPanel>
     </Border>
     <StackPanel Grid.Row="6">
       <TextBlock Text="LIVE WORD CHECK  ·  GREEN MATCHES  ·  CORAL NEEDS WORK" Style="{StaticResource Caption}" FontSize="11" Margin="0,0,0,8"/>
       <Border Background="{DynamicResource CardAlt}" CornerRadius="9" Padding="8" MinHeight="48">
-        <ScrollViewer MaxHeight="75" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="WordFeedbackScroll" MaxHeight="124" VerticalScrollBarVisibility="Auto">
           <WrapPanel x:Name="WordFeedbackPanel"/>
         </ScrollViewer>
       </Border>

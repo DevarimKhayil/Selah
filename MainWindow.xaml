@@ -1,3 +1,8 @@
+<!-- The main Selah window: the sidebar (Today, Week, Bible, Highlights, My verses, Reflections,
+     Torah, Settings) on the left and one page per section on the right. Only one page is visible
+     at a time (Show-Page in Selah.ps1). Named controls (x:Name) are looked up by Selah.ps1, so
+     renaming one here needs the same change there. Colours use DynamicResource keys from the
+     Chalk palette so Light/Dark switching works. -->
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Selah — Scripture, remembered" Width="1180" Height="800"
@@ -6,12 +11,6 @@
         FontFamily="{DynamicResource TextFont}" FontSize="14"
         TextOptions.TextFormattingMode="Display" UseLayoutRounding="True">
   <Grid>
-    <!-- Soft Windows 11 style bloom behind the glass panels -->
-    <Canvas IsHitTestVisible="False" ClipToBounds="True">
-      <Ellipse Width="760" Height="620" Canvas.Left="520" Canvas.Top="-260" Fill="{DynamicResource BloomA}"/>
-      <Ellipse Width="640" Height="560" Canvas.Left="-220" Canvas.Top="430" Fill="{DynamicResource BloomB}"/>
-    </Canvas>
-
     <Grid>
       <Grid.ColumnDefinitions>
         <ColumnDefinition x:Name="NavColumn" Width="252"/>
@@ -29,8 +28,8 @@
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
           <StackPanel Orientation="Horizontal" Margin="6,0,0,0">
-            <Border Width="40" Height="40" CornerRadius="11" Background="{DynamicResource HeroBrush}">
-              <TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="20" Foreground="White" HorizontalAlignment="Center"/>
+            <Border Width="40" Height="40" CornerRadius="11" Background="{DynamicResource TileBg}">
+              <TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="20" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/>
             </Border>
             <StackPanel x:Name="BrandText" Margin="12,0,0,0" VerticalAlignment="Center">
               <TextBlock Text="Selah" FontFamily="{StaticResource DisplayFont}" FontSize="20" FontWeight="SemiBold"/>
@@ -41,49 +40,49 @@
           <StackPanel x:Name="NavList" Grid.Row="2">
             <Button x:Name="HomeNav" Style="{StaticResource NavButton}" Margin="0,0,0,3" Tag="Selected">
               <StackPanel Orientation="Horizontal">
-                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="#0F6CBD"><TextBlock Text="&#xE80F;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE80F;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <TextBlock Text="Today" Margin="12,0,0,0" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="WeekNav" Style="{StaticResource NavButton}" Margin="0,0,0,3">
+              <StackPanel Orientation="Horizontal">
+                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
+                <TextBlock Text="Week" Margin="12,0,0,0" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="BibleNav" Style="{StaticResource NavButton}" Margin="0,0,0,3">
               <StackPanel Orientation="Horizontal">
-                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="#8764B8"><TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <TextBlock Text="Bible" Margin="12,0,0,0" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="HighlightsNav" Style="{StaticResource NavButton}" Margin="0,0,0,3">
               <StackPanel Orientation="Horizontal">
-                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="#CA5010"><TextBlock Text="&#xE7E6;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE7E6;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <TextBlock Text="Highlights" Margin="12,0,0,0" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="LibraryNav" Style="{StaticResource NavButton}" Margin="0,0,0,3">
               <StackPanel Orientation="Horizontal">
-                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="#107C41"><TextBlock Text="&#xE8F1;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE8F1;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <TextBlock Text="My verses" Margin="12,0,0,0" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="JournalNav" Style="{StaticResource NavButton}" Margin="0,0,0,3">
               <StackPanel Orientation="Horizontal">
-                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="#7719AA"><TextBlock Text="&#xE70B;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE70B;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <TextBlock Text="Reflections" Margin="12,0,0,0" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="TorahNav" Style="{StaticResource NavButton}" Margin="0,0,0,3">
               <StackPanel Orientation="Horizontal">
-                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="#C43E1C"><TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <TextBlock Text="Torah readings" Margin="12,0,0,0" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Button>
-            <Button x:Name="BsfNav" Style="{StaticResource NavButton}" Margin="0,0,0,3">
-              <StackPanel Orientation="Horizontal">
-                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="#038387"><TextBlock Text="&#xE7BE;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
-                <TextBlock Text="Romans study" Margin="12,0,0,0" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
             <Button x:Name="SettingsNav" Style="{StaticResource NavButton}">
               <StackPanel Orientation="Horizontal">
-                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="#616161"><TextBlock Text="&#xE713;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE713;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <TextBlock Text="Settings" Margin="12,0,0,0" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
@@ -154,14 +153,14 @@
             <Border CornerRadius="18" Padding="26,24" Margin="0,0,0,16" Background="{DynamicResource HeroBrush}">
               <StackPanel>
                 <DockPanel>
-                  <TextBlock x:Name="DailyVersionLabel" Text="BSB · NEW EACH DAY" Foreground="#CFE0F7" FontSize="12" FontWeight="SemiBold" DockPanel.Dock="Right" Margin="12,0,0,0"/>
+                  <TextBlock x:Name="DailyVersionLabel" Text="BSB · NEW EACH DAY" Foreground="{DynamicResource HeroCaption}" FontSize="12" FontWeight="SemiBold" DockPanel.Dock="Right" Margin="12,0,0,0"/>
                   <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="&#xE734;" Style="{StaticResource Icon}" FontSize="13" Foreground="#E8F1FF"/>
-                    <TextBlock Text="VERSE OF THE DAY" Foreground="#E8F1FF" FontSize="12" FontWeight="Bold" Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="&#xE734;" Style="{StaticResource Icon}" FontSize="13" Foreground="{DynamicResource HeroCaption}"/>
+                    <TextBlock Text="VERSE OF THE DAY" Foreground="{DynamicResource HeroCaption}" FontSize="12" FontWeight="Bold" Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
                 </DockPanel>
-                <TextBlock x:Name="DailyText" FontFamily="{StaticResource DisplayFont}" FontSize="23" FontWeight="SemiBold" Foreground="White" TextWrapping="Wrap" LineHeight="33" Margin="0,18,0,12"/>
-                <TextBlock x:Name="DailyReference" Foreground="#E8F1FF" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                <TextBlock x:Name="DailyText" FontFamily="{StaticResource ReadingFont}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource HeroText}" TextWrapping="Wrap" LineHeight="33" Margin="0,18,0,12"/>
+                <TextBlock x:Name="DailyReference" Foreground="{DynamicResource HeroText}" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12"/>
                 <WrapPanel>
                     <Button x:Name="NewDailyButton" Style="{StaticResource HeroButton}" ToolTip="Show me a different verse today" Margin="0,0,8,6">
                       <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE72C;" Style="{StaticResource Icon}" FontSize="12"/><TextBlock Text="Another" Margin="7,0,0,0"/></StackPanel>
@@ -181,7 +180,7 @@
               <Border Grid.Column="0" Style="{StaticResource CardStyle}">
                 <StackPanel>
                   <StackPanel Orientation="Horizontal">
-                    <Border Style="{StaticResource IconTile}" Width="32" Height="32" CornerRadius="9" Background="#0F6CBD"><TextBlock Text="&#xE7C3;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                    <Border Style="{StaticResource IconTile}" Width="32" Height="32" CornerRadius="9" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE7C3;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                     <TextBlock x:Name="FocusTitle" Text="CURRENT FOCUS" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="11,0,0,0"/>
                   </StackPanel>
                   <TextBlock x:Name="FocusReference" Text="No verse yet" FontFamily="{StaticResource DisplayFont}" FontSize="23" FontWeight="SemiBold" Margin="0,14,0,4"/>
@@ -198,7 +197,7 @@
               <Border Grid.Column="2" Style="{StaticResource CardStyle}">
                 <StackPanel>
                   <StackPanel Orientation="Horizontal">
-                    <Border Style="{StaticResource IconTile}" Width="32" Height="32" CornerRadius="9" Background="#107C41"><TextBlock Text="&#xE734;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                    <Border Style="{StaticResource IconTile}" Width="32" Height="32" CornerRadius="9" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE734;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                     <TextBlock Text="YOUR JOURNEY" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="11,0,0,0"/>
                   </StackPanel>
                   <TextBlock x:Name="MasteredCount" FontFamily="{StaticResource DisplayFont}" FontSize="44" FontWeight="SemiBold" Foreground="{DynamicResource Text}" Margin="0,6,0,0"/>
@@ -213,7 +212,7 @@
             <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16" Padding="20,18">
               <StackPanel>
                 <StackPanel Orientation="Horizontal">
-                  <Border Style="{StaticResource IconTile}" Width="32" Height="32" CornerRadius="9" Background="#8764B8"><TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                  <Border Style="{StaticResource IconTile}" Width="32" Height="32" CornerRadius="9" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                   <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="TODAY'S PSALMS &amp; PROVERB" Style="{StaticResource Caption}"/>
                     <TextBlock Text="The chapter for today's date, then add 30 for each Psalm." Foreground="{DynamicResource TextTertiary}" FontSize="12" Margin="0,2,0,0"/>
@@ -224,18 +223,10 @@
             </Border>
 
             <TextBlock Text="Explore" FontFamily="{StaticResource DisplayFont}" FontSize="18" FontWeight="SemiBold" Margin="2,4,0,10"/>
-            <UniformGrid x:Name="ExploreGrid" Columns="3" Margin="-6,0,-6,0">
-              <Button x:Name="BsfHomeOpenButton" Style="{StaticResource TileButton}" Margin="6,0,6,12">
-                <StackPanel>
-                  <Border Style="{StaticResource IconTile}" Background="#038387" HorizontalAlignment="Left"><TextBlock Text="&#xE7BE;" Style="{StaticResource Icon}" FontSize="18" Foreground="White" HorizontalAlignment="Center"/></Border>
-                  <TextBlock Text="ROMANS STUDY" Style="{StaticResource Caption}" Margin="0,12,0,0"/>
-                  <TextBlock x:Name="BsfHomeLesson" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                  <TextBlock x:Name="BsfHomeMeta" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextWrapping="Wrap" Margin="0,3,0,0"/>
-                </StackPanel>
-              </Button>
+            <UniformGrid x:Name="ExploreGrid" Columns="2" Margin="-6,0,-6,0">
               <Button x:Name="TorahHomeOpenButton" Style="{StaticResource TileButton}" Margin="6,0,6,12">
                 <StackPanel>
-                  <Border Style="{StaticResource IconTile}" Background="#C43E1C" HorizontalAlignment="Left"><TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="18" Foreground="White" HorizontalAlignment="Center"/></Border>
+                  <Border Style="{StaticResource IconTile}" Background="{DynamicResource TileBg}" HorizontalAlignment="Left"><TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="18" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                   <TextBlock Text="THIS WEEK'S TORAH" Style="{StaticResource Caption}" Margin="0,12,0,0"/>
                   <TextBlock x:Name="TorahHomeName" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"/>
                   <TextBlock x:Name="TorahHomeReading" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextWrapping="Wrap" Margin="0,3,0,0"/>
@@ -244,7 +235,7 @@
               </Button>
               <Button x:Name="WriteReflectionButton" Style="{StaticResource TileButton}" Margin="6,0,6,12">
                 <StackPanel>
-                  <Border Style="{StaticResource IconTile}" Background="#7719AA" HorizontalAlignment="Left"><TextBlock Text="&#xE70B;" Style="{StaticResource Icon}" FontSize="18" Foreground="White" HorizontalAlignment="Center"/></Border>
+                  <Border Style="{StaticResource IconTile}" Background="{DynamicResource TileBg}" HorizontalAlignment="Left"><TextBlock Text="&#xE70B;" Style="{StaticResource Icon}" FontSize="18" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                   <TextBlock Text="REFLECTIONS" Style="{StaticResource Caption}" Margin="0,12,0,0"/>
                   <TextBlock Text="A quiet place for today" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"/>
                   <TextBlock Text="Capture a thought, prayer, or something you noticed." Foreground="{DynamicResource TextSecondary}" FontSize="12" TextWrapping="Wrap" Margin="0,3,0,0"/>
@@ -291,7 +282,7 @@
               <StackPanel>
                 <TextBlock x:Name="SelectedState" Style="{StaticResource AccentCaption}"/>
                 <TextBlock x:Name="SelectedReference" FontFamily="{StaticResource DisplayFont}" FontSize="26" FontWeight="SemiBold" Margin="0,12,0,14"/>
-                <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="SelectedText" Foreground="{DynamicResource Text}" FontSize="17" LineHeight="27" TextWrapping="Wrap"/></ScrollViewer>
+                <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="SelectedText" Foreground="{DynamicResource Text}" FontFamily="{StaticResource ReadingFont}" FontSize="18" LineHeight="29" TextWrapping="Wrap"/></ScrollViewer>
                 <TextBlock x:Name="SelectedProgress" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,18,0,18"/>
                 <StackPanel Orientation="Horizontal">
                   <Button x:Name="FocusSelectedButton" Content="Make my focus" Style="{StaticResource PrimaryButton}"/>
@@ -370,6 +361,11 @@
           </Grid>
         </Grid>
 
+        <!-- WEEK: goals, daily tasks, reflection (built in WeekFeatures.ps1) -->
+        <ScrollViewer x:Name="WeekPage" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+          <StackPanel x:Name="WeekContent" Margin="0,0,12,16"/>
+        </ScrollViewer>
+
         <!-- REFLECTIONS -->
         <Grid x:Name="JournalPage" Grid.Row="2" Visibility="Collapsed">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="18"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -415,7 +411,7 @@
               <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16" Padding="24">
                 <StackPanel>
                   <StackPanel Orientation="Horizontal">
-                    <Border Style="{StaticResource IconTile}" Width="32" Height="32" CornerRadius="9" Background="#C43E1C"><TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="14" Foreground="White" HorizontalAlignment="Center"/></Border>
+                    <Border Style="{StaticResource IconTile}" Width="32" Height="32" CornerRadius="9" Background="{DynamicResource TileBg}"><TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="14" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                     <TextBlock x:Name="TorahCurrentKindLabel" Text="UPCOMING SHABBAT PORTION" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="11,0,0,0"/>
                   </StackPanel>
                   <TextBlock x:Name="TorahCurrentName" FontFamily="{StaticResource DisplayFont}" FontSize="28" FontWeight="SemiBold" Margin="0,12,0,0"/>
@@ -453,51 +449,6 @@
           </ScrollViewer>
         </Grid>
 
-        <!-- ROMANS STUDY -->
-        <Grid x:Name="BsfPage" Grid.Row="2" Visibility="Collapsed">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/><RowDefinition Height="14"/><RowDefinition Height="Auto"/>
-            <RowDefinition Height="14"/><RowDefinition Height="*"/>
-          </Grid.RowDefinitions>
-          <Grid>
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <StackPanel>
-              <TextBlock x:Name="BsfLessonHeading" Text="Romans study" Style="{StaticResource PageTitle}" TextWrapping="Wrap"/>
-              <WrapPanel x:Name="BsfLessonMetaPanel" Margin="0,6,0,0">
-                <TextBlock x:Name="BsfLessonMeta" Foreground="{DynamicResource TextSecondary}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap"/>
-              </WrapPanel>
-            </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0">
-              <Button x:Name="BsfPreviousButton" Style="{StaticResource GhostButton}" Padding="0" Width="40" Height="36" ToolTip="Previous lesson"><TextBlock Text="&#xE76B;" Style="{StaticResource Icon}" FontSize="12"/></Button>
-              <Button x:Name="BsfCurrentButton" Content="This week" Style="{StaticResource GhostButton}" Margin="6,0,6,0"/>
-              <Button x:Name="BsfNextButton" Style="{StaticResource GhostButton}" Padding="0" Width="40" Height="36" ToolTip="Next lesson"><TextBlock Text="&#xE76C;" Style="{StaticResource Icon}" FontSize="12"/></Button>
-            </StackPanel>
-          </Grid>
-          <WrapPanel Grid.Row="2">
-            <Border Margin="0,0,16,6" Background="{DynamicResource CardAlt}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1" CornerRadius="19" Padding="2">
-              <StackPanel Orientation="Horizontal">
-                <Button x:Name="BsfQuestionsTab" Content="Questions &amp; answers" Style="{StaticResource TabButton}" Tag="Selected"/>
-                <Button x:Name="BsfNotesTab" Content="Previous lesson notes" Style="{StaticResource TabButton}"/>
-              </StackPanel>
-            </Border>
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-              <TextBlock x:Name="BsfSavedLabel" Foreground="{DynamicResource TextSecondary}" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0"/>
-              <Button x:Name="BsfExportButton" Style="{StaticResource GhostButton}">
-                <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE72D;" Style="{StaticResource Icon}" FontSize="12"/><TextBlock Text="Export answers" Margin="7,0,0,0"/></StackPanel>
-              </Button>
-            </StackPanel>
-          </WrapPanel>
-          <ScrollViewer x:Name="BsfQuestionsView" Grid.Row="4" VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="BsfQuestionPanel" Margin="0,0,12,8"/>
-          </ScrollViewer>
-          <Grid x:Name="BsfNotesView" Grid.Row="4" Visibility="Collapsed">
-            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="10"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <TextBlock x:Name="BsfNotesHeading" Style="{StaticResource AccentCaption}"/>
-            <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="6">
-              <FlowDocumentScrollViewer x:Name="BsfNotesBody" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsToolBarVisible="False" Foreground="{DynamicResource Text}"/>
-            </Border>
-          </Grid>
-        </Grid>
 
         <!-- SETTINGS -->
         <ScrollViewer x:Name="SettingsPage" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
@@ -509,7 +460,7 @@
             <Border Style="{StaticResource CardStyle}" Padding="20" Margin="0,0,0,6">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="#0F6CBD" VerticalAlignment="Top"><TextBlock Text="&#xE790;" Style="{StaticResource Icon}" FontSize="15" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="{DynamicResource TileBg}" VerticalAlignment="Top"><TextBlock Text="&#xE790;" Style="{StaticResource Icon}" FontSize="15" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <StackPanel Grid.Column="1" Margin="14,0,20,0">
                   <TextBlock Text="Appearance" FontSize="16" FontWeight="SemiBold"/>
                   <TextBlock Text="Light is bright and airy; Dark is easier on the eyes at night." Foreground="{DynamicResource TextSecondary}" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0"/>
@@ -525,7 +476,7 @@
             <Border Style="{StaticResource CardStyle}" Padding="20" Margin="0,0,0,20">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="#8764B8" VerticalAlignment="Top"><TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="15" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="{DynamicResource TileBg}" VerticalAlignment="Top"><TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="15" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <StackPanel Grid.Column="1" Margin="14,0,20,0">
                   <TextBlock Text="Bible translation" FontSize="16" FontWeight="SemiBold"/>
                   <TextBlock Text="Used for the daily verse, the Bible reader, and every clickable reference. BSB is modern English close to the NIV. NIV text is copyrighted, so each passage has a 'Read in NIV' button that opens it on BibleGateway." Foreground="{DynamicResource TextSecondary}" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0"/>
@@ -543,7 +494,7 @@
             <Border Style="{StaticResource CardStyle}" Padding="20" Margin="0,0,0,6">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="#107C41" VerticalAlignment="Top"><TextBlock Text="&#xE7E8;" Style="{StaticResource Icon}" FontSize="15" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="{DynamicResource TileBg}" VerticalAlignment="Top"><TextBlock Text="&#xE7E8;" Style="{StaticResource Icon}" FontSize="15" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <StackPanel Grid.Column="1" Margin="14,0,20,0">
                   <TextBlock Text="Start with Windows" FontSize="16" FontWeight="SemiBold"/>
                   <TextBlock Text="Open Selah quietly in the tray when you sign in, so the reminders are ready." Foreground="{DynamicResource TextSecondary}" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0"/>
@@ -554,7 +505,7 @@
             <Border Style="{StaticResource CardStyle}" Padding="20" Margin="0,0,0,6">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="#C43E1C" VerticalAlignment="Top"><TextBlock Text="&#xE734;" Style="{StaticResource Icon}" FontSize="15" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="{DynamicResource TileBg}" VerticalAlignment="Top"><TextBlock Text="&#xE734;" Style="{StaticResource Icon}" FontSize="15" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <StackPanel Grid.Column="1" Margin="14,0,20,0">
                   <TextBlock Text="Offer today's verse" FontSize="16" FontWeight="SemiBold"/>
                   <TextBlock Text="When no verse is focused, invite me to read today's verse and then type it from memory." Foreground="{DynamicResource TextSecondary}" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0"/>
@@ -565,7 +516,7 @@
             <Border Style="{StaticResource CardStyle}" Padding="20" Margin="0,0,0,6">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="#038387" VerticalAlignment="Top"><TextBlock Text="&#xE8A9;" Style="{StaticResource Icon}" FontSize="15" Foreground="White" HorizontalAlignment="Center"/></Border>
+                <Border Style="{StaticResource IconTile}" Width="34" Height="34" CornerRadius="9" Background="{DynamicResource TileBg}" VerticalAlignment="Top"><TextBlock Text="&#xE8A9;" Style="{StaticResource Icon}" FontSize="15" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
                 <StackPanel Grid.Column="1" Margin="14,0,20,0">
                   <TextBlock Text="Shortcuts" FontSize="16" FontWeight="SemiBold"/>
                   <TextBlock x:Name="ShortcutStatusLabel" Text="Selah is in your Start menu. Add a desktop icon too if you like." Foreground="{DynamicResource TextSecondary}" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0"/>

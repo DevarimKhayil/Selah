@@ -9,32 +9,43 @@ import android.widget.RemoteViews;
 
 /** Home screen widget showing the verse of the day. */
 public class VerseWidget extends AppWidgetProvider {
+    /** Android asks the widget to redraw (added, or the day changed). */
     @Override
     public void onUpdate(Context ctx, AppWidgetManager m, int[] ids) {
         update(ctx, m, ids);
         ReminderReceiver.scheduleNext(ctx);
     }
 
+    /** The user resized the widget: refit the text to the new size. */
     @Override
     public void onAppWidgetOptionsChanged(Context ctx, AppWidgetManager m, int id, Bundle options) {
         update(ctx, m, new int[] { id });
     }
 
+    /** Curly quotes around a verse, without doubling a quote mark it already has. */
+    static String quoted(String t) {
+        t = t == null ? "" : t.trim();
+        String open = t.matches("^[\u201C\u2018\"'].*") ? "" : "\u201C";
+        String close = t.matches(".*[\u201D\u2019\"']$") ? "" : "\u201D";
+        return open + t + close;
+    }
+
     /** Largest text size (sp) that lets the whole verse fit the widget's current size. */
     static float fitTextSize(String text, int widthDp, int heightDp) {
         if (widthDp <= 0) widthDp = 250;
-        if (heightDp <= 0) heightDp = 110;
-        float usableW = widthDp - 40;          // side padding
-        float usableH = heightDp - 64;         // label, reference and padding
+        if (heightDp <= 0) heightDp = 90;
+        float usableW = widthDp - 26;          // side padding
+        float usableH = heightDp - 40;         // label, reference and padding
         int len = text.length();
-        for (float sp = 17f; sp >= 9f; sp -= 0.5f) {
+        for (float sp = 14f; sp >= 8f; sp -= 0.5f) {
             float charsPerLine = usableW / (sp * 0.52f);
             int lines = (int) Math.ceil(len / Math.max(8f, charsPerLine)) + 1;
-            if (lines * sp * 1.32f <= usableH) return sp;
+            if (lines * sp * 1.25f <= usableH) return sp;
         }
-        return 9f;
+        return 8f;
     }
 
+    /** Draws the widget: today's verse, its reference and translation, sized to fit; tapping opens Selah. */
     static void update(Context ctx, AppWidgetManager m, int[] ids) {
         DailyVerse v = DailyVerse.forToday(ctx);
         for (int id : ids) {
@@ -44,7 +55,7 @@ public class VerseWidget extends AppWidgetProvider {
             int w = o == null ? 0 : o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH);
             int h = o == null ? 0 : o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT);
             if (v != null) {
-                String body = "\u201C" + v.text + "\u201D";
+                String body = quoted(v.text);
                 rv.setTextViewText(R.id.verse_text, body);
                 rv.setTextViewTextSize(R.id.verse_text, TypedValue.COMPLEX_UNIT_SP, fitTextSize(body, w, h));
                 rv.setTextViewText(R.id.verse_ref, v.reference);

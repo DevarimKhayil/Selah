@@ -9,18 +9,21 @@ Selah is a Scripture-memory and Bible-study app with two front ends that share t
 
 | Path | What it is |
 | --- | --- |
+| `SELAH-GUIDE.md` | Full technical guide: stack, layout, data formats, build and tests. Keep it current when features change. |
 | `Selah.ps1` | Desktop app: state, verses, practice, reminders, tray, themes, window wiring. |
-| `StudyFeatures.ps1` | Hebrew date, Torah readings, Bible text/passages, reference detection (`Find-ScriptureReferences`), Romans study. |
+| `StudyFeatures.ps1` | Hebrew date, Torah readings, Bible text/passages, reference detection (`Find-ScriptureReferences`). |
+| `WeekFeatures.ps1` | Week page: words for the week, weekly goals, daily tasks (with repeating habits and carry-over) and the Sunday review. |
 | `BibleFeatures.ps1` | Verse highlighting (12 colours), Highlights page, book list with chapter grids. |
-| `Theme.xaml` | Shared WPF styles. Colour brushes are written at runtime by `Set-Theme` (Light/Dark). |
+| `Theme.xaml` | Shared WPF styles and fonts. Colour brushes are written at runtime by `Set-Theme` (Chalk Light/Dark). |
+| `Fonts/` | Inter (UI) and Source Serif 4 (Scripture), SIL OFL. Loaded through the base URI given to `Theme.xaml`. |
 | `MainWindow.xaml`, `*Window.xaml` | Desktop windows and dialogs. |
 | `BibleData/*.json` | KJV (MIT, Arul John). `BibleData/BSB/*.json` is the Berean Standard Bible (CC0). |
 | `daily-verses.json` | The 446-verse daily pool (references only; text comes from the chosen translation). |
-| `StudyData/` | Personal study data. `SOURCES.md` is public; the lesson/Torah JSON files are **not** in git. |
-| `BuildStudyData.py` | Rebuilds `StudyData/*.json` from the user's own PDFs. |
+| `StudyData/` | Personal study data. `SOURCES.md` is public; the Torah JSON files are **not** in git. |
+| `BuildStudyData.py` | Rebuilds the Torah `StudyData/*.json` from the user's own PDF. |
 | `Test-Selah.ps1` | Desktop smoke test (Windows only). `RunCheck.cmd` runs it and saves preview PNGs. |
 | `mobile/` | Android app: `AndroidManifest.xml`, `res/`, `src/app/selah/*.java`, `assets/www/{index.html,app.js,app.css}`. |
-| `tools/build_android_data.py` | Generates the phone's `bible/`, `data/pool.js`, and (if present) `data/romans.js`, `data/torah.js`. |
+| `tools/build_android_data.py` | Generates the phone's `bible/`, `data/pool.js`, and (if present) `data/torah.js`. |
 
 ## Running and testing
 
@@ -46,13 +49,14 @@ The web app can be tested in any browser by opening `mobile/assets/www/index.htm
 
 ## Rules and gotchas
 
-- **Never commit** `StudyData/romans-lessons.json`, `StudyData/torah-*.json`, `mobile/assets/www/data/romans.js`, `mobile/assets/www/data/torah.js` (BSF material is licensed for personal class use only), or any `*.jks` keystore. They are in `.gitignore`.
+- **Never commit** `StudyData/torah-*.json`, `mobile/assets/www/data/torah.js` (personal study material), or any `*.jks` keystore. They are in `.gitignore`. The Romans (BSF) study was removed on purpose; do not bring it back.
 - **Signing key:** phone updates install over the old app only when signed with the same `selah-release.jks`. Keep it out of git; bump `versionCode` in `mobile/AndroidManifest.xml` for every release.
 - The Android build compiles against API 23 (`android.jar` from Ubuntu). Newer APIs (notification channels, `setChannelId`, `FLAG_IMMUTABLE`) are used through reflection or literal constants. No lambdas or `java.util.function`.
 - PowerShell files must stay **UTF-8 with BOM** (Windows PowerShell reads BOM-less files as ANSI). Curly single quotes inside strings end the string in PowerShell; use `[char]0x2019` etc.
 - Do not use `GetNewClosure()` for WPF event handlers: closures lose access to script-scope functions. Handlers rely on dynamic scope (dialogs run inside `ShowDialog()`).
 - In `Theme.xaml`, style keys must not match palette brush keys set by `Set-Theme` (`Card`, `Field`, `ScrollThumb`, ...). Styles use the `...Style` suffix for that reason.
 - UI colours in code use `SetResourceReference(..., 'Key')` so Light/Dark switching works; avoid hard-coded hex except highlight colours.
-- Data formats are shared between desktop and phone: verses, reflections, `bibleNotes` (key `Book|chapter|verse`), `bsfAnswers`, `highlights` (`{key: {color, at}}`). The phone imports a desktop `state.json` through Settings › Backup.
-- Romans lessons change on **Wednesday** (Lesson 5 began 2026-10-14). Reminder times are 10:00, 12:30, 14:00, 16:30.
+- Data formats are shared between desktop and phone: verses, reflections, `bibleNotes` (key `Book|chapter|verse`), `highlights` (`{key: {color, at}}`), `weeks` (`{mondayIso: {words, goals, days: {iso: {tasks}}, review, updatedAt}}`) and `habits`. Task/goal `status` is `''`, `done`, `partly`, `tried` or `no`. The phone imports a desktop `state.json` through Settings › Backup.
+- Reminder times are 10:00, 12:30, 14:00, 16:30.
+- Colours follow the Chalk palette only (#F7F7F1, #0A0A0A, #C7FF2E, #C9D0D6, #6F7780): no purple/blue gradients or generic blues.
 - NIV text is copyrighted: never bundle it; link to BibleGateway instead.

@@ -1,3 +1,5 @@
+<!-- Scripture reader dialog: a passage in the reading font with a BSB/KJV switch and a
+     Read in NIV button. Filled by Show-Scripture (StudyFeatures.ps1). -->
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Read Scripture — Selah" Width="760" Height="660" MinWidth="560" MinHeight="430"
@@ -6,7 +8,7 @@
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="14"/><RowDefinition Height="*"/><RowDefinition Height="14"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <Border Style="{StaticResource IconTile}" Background="#8764B8" VerticalAlignment="Top"><TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="17" Foreground="White" HorizontalAlignment="Center"/></Border>
+      <Border Style="{StaticResource IconTile}" Background="{DynamicResource TileBg}" VerticalAlignment="Top"><TextBlock Text="&#xE736;" Style="{StaticResource Icon}" FontSize="17" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
       <StackPanel Grid.Column="1" Margin="14,0,12,0">
         <TextBlock x:Name="ScriptureVersionLabel" Text="BEREAN STANDARD BIBLE" Style="{StaticResource AccentCaption}"/>
         <TextBlock x:Name="ScriptureReference" FontFamily="{StaticResource DisplayFont}" FontSize="25" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,0"/>

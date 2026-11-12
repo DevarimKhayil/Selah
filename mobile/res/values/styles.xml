@@ -2,8 +2,8 @@
 <resources>
     <style name="SelahTheme" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
-        <item name="android:colorAccent">#0F6CBD</item>
-        <item name="android:colorPrimary">#0F6CBD</item>
+        <item name="android:colorAccent">#0A0A0A</item>
+        <item name="android:colorPrimary">#0A0A0A</item>
     </style>
     <color name="bg">#F3F5FA</color>
 </resources>

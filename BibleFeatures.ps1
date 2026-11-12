@@ -1,6 +1,8 @@
-﻿# Verse highlighting (same 12 colours as Selah for Android), the Highlights page,
-# and the book list that opens to show each book's chapter numbers.
-
+﻿# =====================================================================================
+# BibleFeatures.ps1 - verse highlighting (12 colours), the Highlights page and the Bible
+# page's book list. Highlight data uses the same shape as the phone app:
+#   highlights = { 'Book|chapter|verse': { color = 'sky'; at = '<ISO time>' } }
+# =====================================================================================
 $script:highlights = [ordered]@{}
 $script:highlightFilter = ''
 $script:bookChapterCounts = @(50,40,27,36,34,24,21,4,31,24,22,25,29,36,10,13,10,42,150,31,12,8,66,52,5,48,12,14,3,9,1,4,7,3,3,3,2,14,4,28,16,24,21,28,16,16,13,6,6,4,4,5,3,6,4,3,1,13,5,5,3,5,1,1,1,22)
@@ -19,11 +21,14 @@ $script:highlightPalette = @(
     [pscustomobject]@{ key = 'sand';       name = 'Sand';       fill = '#EADCC8'; strong = '#A27C4E' }
 )
 
+# Looks up one of the 12 highlight colours by its key ('honey', 'sky', ...).
 function Get-PaletteEntry([string]$key) {
     foreach ($p in $script:highlightPalette) { if ($p.key -eq $key) { return $p } }
     return $null
 }
 
+# Brush for a highlight colour: the soft fill, or the strong edge colour when $strong.
+# In Dark mode the fill is a translucent version of the strong colour.
 function Get-HighlightBrush([string]$key, [bool]$strong = $false) {
     $p = Get-PaletteEntry $key
     if ($null -eq $p) { return [System.Windows.Media.Brushes]::Transparent }
@@ -38,17 +43,20 @@ function Get-HighlightBrush([string]$key, [bool]$strong = $false) {
     return $brush
 }
 
+# Highlight colour key saved for a verse key 'Book|chapter|verse', or ''.
 function Get-Highlight([string]$key) {
     if ($script:highlights.Contains($key)) { return [string]$script:highlights[$key].color }
     return ''
 }
 
+# Saves (or removes, when $color is '') a verse highlight and the time it was set.
 function Set-Highlight([string]$key, [string]$color) {
     if ($color) { $script:highlights[$key] = [pscustomobject]@{ color = $color; at = (Get-Date).ToString('o') } }
     elseif ($script:highlights.Contains($key)) { $script:highlights.Remove($key) }
     Save-State
 }
 
+# Loads highlights from state.json into an ordered dictionary, skipping unknown colours.
 function Read-Highlights($raw) {
     $script:highlights = [ordered]@{}
     if ($null -eq $raw) { return }
@@ -57,12 +65,14 @@ function Read-Highlights($raw) {
     }
 }
 
+# Returns highlights in the plain object shape state.json (and the phone) expects.
 function Get-HighlightsForSave {
     $o = [ordered]@{}
     foreach ($k in $script:highlights.Keys) { $o[$k] = $script:highlights[$k] }
     return [pscustomobject]$o
 }
 
+# Colours one verse row on the Bible page with its highlight.
 function Paint-VerseRow($button) {
     # Shade the verse text with its highlight colour.
     $key = [string]$button.Tag
@@ -77,6 +87,8 @@ function Paint-VerseRow($button) {
     }
 }
 
+# Shows the 12 colour swatches and a Clear button for the selected verse.
+# Clicking the verse's current colour again also removes the highlight.
 function Update-HighlightSwatches([string]$key) {
     $panel = $script:ui.HighlightSwatchPanel
     $panel.Children.Clear()
@@ -117,6 +129,7 @@ function Update-HighlightSwatches([string]$key) {
     $panel.Children.Add($clear) | Out-Null
 }
 
+# Builds the Highlights page: a filter chip per colour and a card for each coloured verse.
 function Update-HighlightsPage {
     $filters = $script:ui.HighlightFilterPanel
     $list = $script:ui.HighlightListPanel
@@ -204,6 +217,7 @@ function Update-HighlightsPage {
 $script:bookRows = @{}
 $script:openBook = ''
 
+# Builds the Bible page's book list (Old and New Testament) once at startup.
 function Initialize-BookList {
     $panel = $script:ui.BibleBookPanel
     $panel.Children.Clear()
@@ -254,6 +268,7 @@ function Initialize-BookList {
     }
 }
 
+# Fills a book's chapter-number grid the first time the book is opened.
 function Build-ChapterGrid($row, [string]$book) {
     if ($row.built) { return }
     for ($c = 1; $c -le $row.count; $c++) {
@@ -267,6 +282,7 @@ function Build-ChapterGrid($row, [string]$book) {
     $row.built = $true
 }
 
+# Opens or closes a book in the list so its chapter numbers show (accordion).
 function Toggle-BookRow([string]$book) {
     $row = $script:bookRows[$book]
     if ($null -eq $row) { return }
@@ -288,6 +304,7 @@ function Toggle-BookRow([string]$book) {
     }
 }
 
+# Marks the open book and chapter in the book list (opening that book if needed).
 function Sync-BookList([string]$book, [int]$chapter) {
     if (-not $script:bookRows.Count) { return }
     foreach ($name in $script:bookRows.Keys) { $script:bookRows[$name].header.Tag = if ($name -eq $book) { 'Selected' } else { $null } }

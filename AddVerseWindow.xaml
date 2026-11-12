@@ -1,3 +1,5 @@
+<!-- Add verse / Edit verse dialog: reference, verse text and the 'Fill in' button that looks the
+     text up in the chosen translation. Wired in Show-AddVerse (Selah.ps1). -->
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Add a verse — Selah" Width="540" Height="500" ResizeMode="NoResize"
@@ -9,7 +11,7 @@
       <RowDefinition Height="*"/><RowDefinition Height="20"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <StackPanel Orientation="Horizontal">
-      <Border Style="{StaticResource IconTile}" Background="#107C41" VerticalAlignment="Top"><TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="17" Foreground="White" HorizontalAlignment="Center"/></Border>
+      <Border Style="{StaticResource IconTile}" Background="{DynamicResource TileBg}" VerticalAlignment="Top"><TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="17" Foreground="{DynamicResource TileFg}" HorizontalAlignment="Center"/></Border>
       <StackPanel Margin="14,0,0,0">
         <TextBlock x:Name="DialogCaption" Text="NEW MEMORY" Style="{StaticResource AccentCaption}"/>
         <TextBlock x:Name="DialogTitle" Text="Add a verse" FontFamily="{StaticResource DisplayFont}" FontSize="26" FontWeight="SemiBold" Margin="0,2,0,0"/>
